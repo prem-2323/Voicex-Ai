@@ -1,0 +1,6 @@
+{
+  "name": "VoiceX AI - Real-Time Multilingual Voice Assistant",
+  "description": "Premium real-time multilingual voice assistant UI powered by locally deployed open-weight AI models with low-latency streaming and performance telemetry.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
