@@ -68,12 +68,24 @@ export const WorkspaceView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [voiceState, startListening, stopListeningAndProcess, cancelTurn]);
 
+  const [isClickDebounced, setIsClickDebounced] = useState(false);
+
   const handleMicClick = () => {
+    if (isClickDebounced) return;
+
+    if (voiceState === 'transcribing') {
+      return; // Prevent duplicate requests while transcribing
+    }
+
     if (voiceState === 'listening') {
+      setIsClickDebounced(true);
+      setTimeout(() => setIsClickDebounced(false), 600);
       stopListeningAndProcess();
     } else if (voiceState === 'speaking' || voiceState === 'thinking') {
       cancelTurn();
-    } else {
+    } else if (voiceState === 'idle' || voiceState === 'error' || voiceState === 'interrupted') {
+      setIsClickDebounced(true);
+      setTimeout(() => setIsClickDebounced(false), 400);
       startListening();
     }
   };
@@ -166,24 +178,31 @@ export const WorkspaceView: React.FC = () => {
               {/* Main Microphone Button */}
               <button
                 onClick={handleMicClick}
-                className={`w-13 h-13 rounded-full flex items-center justify-center transition-all duration-150 shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8B5CF6] ${
+                disabled={isClickDebounced || voiceState === 'transcribing'}
+                className={`w-13 h-13 rounded-full flex items-center justify-center transition-all duration-150 shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8B5CF6] disabled:opacity-50 disabled:cursor-not-allowed ${
                   voiceState === 'listening'
                     ? 'bg-[#22D3EE] text-[#0B0F17] hover:bg-[#06B6D4] shadow-[0_0_16px_rgba(34,211,238,0.4)]'
-                    : voiceState === 'speaking' || voiceState === 'thinking' || voiceState === 'transcribing'
+                    : voiceState === 'transcribing'
+                    ? 'bg-[#192335] text-[#22D3EE] border border-[#22D3EE]/50 animate-pulse'
+                    : voiceState === 'speaking' || voiceState === 'thinking'
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
                     : 'bg-[#8B5CF6] hover:bg-[#7C3AED] text-white active:scale-95'
                 }`}
                 aria-label={
                   voiceState === 'listening'
                     ? 'Stop listening'
-                    : voiceState === 'speaking' || voiceState === 'thinking' || voiceState === 'transcribing'
+                    : voiceState === 'transcribing'
+                    ? 'Transcribing audio...'
+                    : voiceState === 'speaking' || voiceState === 'thinking'
                     ? 'Cancel response'
                     : 'Start talking'
                 }
               >
                 {voiceState === 'listening' ? (
                   <Square className="w-5 h-5 fill-current" />
-                ) : voiceState === 'speaking' || voiceState === 'thinking' || voiceState === 'transcribing' ? (
+                ) : voiceState === 'transcribing' ? (
+                  <div className="w-4 h-4 border-2 border-transparent border-t-[#22D3EE] rounded-full animate-spin" />
+                ) : voiceState === 'speaking' || voiceState === 'thinking' ? (
                   <Square className="w-5 h-5 fill-current" />
                 ) : (
                   <Mic className="w-6 h-6" />

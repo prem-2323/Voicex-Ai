@@ -65,3 +65,27 @@ def test_chat_real_ollama_qwen():
     assert "qwen" in data["model"].lower()
     assert data["processing_time_ms"] > 0
 
+
+def test_chat_follow_up_with_history():
+    """Verify that prior conversation turns provide context for follow-up questions."""
+    history = [
+        {"role": "user", "content": "My favorite color is emerald green."},
+        {
+            "role": "assistant",
+            "content": "That is a wonderful color! I have noted that your favorite color is emerald green.",
+        },
+    ]
+    response = client.post(
+        "/api/chat",
+        json={
+            "message": "What is my favorite color?",
+            "history": history,
+            "session_id": "test-session-followup",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    # The response should reference green
+    assert "green" in data["response"].lower()
+

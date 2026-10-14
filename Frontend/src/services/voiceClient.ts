@@ -134,6 +134,7 @@ class VoiceClient {
       baseUrl: string;
       wsUrl: string;
       forcePreviewMode: boolean;
+      sessionId?: string;
       history?: Array<{ role: 'user' | 'assistant'; content: string }>;
     },
     handlers: VoiceStreamHandlers
@@ -175,7 +176,7 @@ class VoiceClient {
 
         // Phase 3: Real Local LLM via Ollama + Qwen 2.5 3B
         const { sendChatMessage } = await import('./api');
-        const chatResult = await sendChatMessage(transcriptText, input.history || []);
+        const chatResult = await sendChatMessage(transcriptText, input.history || [], input.sessionId);
         const answerText = chatResult.response;
         const llmDurationMs = chatResult.processing_time_ms || 0;
         const totalDurationMs = Math.round(sttDurationMs + llmDurationMs);

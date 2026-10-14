@@ -361,12 +361,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const replayAssistantMessage = useCallback((text: string) => {
     if (isMuted) return;
     setVoiceState('speaking');
-    audioManager.speak(text, {
+    audioManager.speakViaBackend(text, {
+      baseUrl: settings.apiBaseUrl,
       rate: settings.speechRate,
       onEnd: () => setVoiceState('idle'),
       onError: () => setVoiceState('idle'),
     });
-  }, [isMuted, settings.speechRate]);
+  }, [isMuted, settings.apiBaseUrl, settings.speechRate]);
 
   // Start listening (Microphone)
   const startListening = useCallback(async () => {
@@ -511,6 +512,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         baseUrl: settings.apiBaseUrl,
         wsUrl: settings.wsUrl,
         forcePreviewMode: settings.forcePreviewMode,
+        sessionId: activeConvId || activeConv?.id,
         history: historyPayload,
       },
       {
@@ -564,7 +566,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           if (!isMuted) {
             setVoiceState('speaking');
-            audioManager.speak(assistantMsg.content, {
+            // Phase 5: play backend Edge-TTS audio, falling back to
+            // local Web Speech synthesis when the TTS service is down.
+            audioManager.speakViaBackend(assistantMsg.content, {
+              baseUrl: settings.apiBaseUrl,
+              voice: settings.selectedVoiceId,
               lang: assistantMsg.detectedLanguage === 'Hindi' ? 'hi' : 'en',
               rate: settings.speechRate,
               onEnd: () => {

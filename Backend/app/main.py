@@ -4,8 +4,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, health, models, transcribe
+from app.api import chat, health, models, transcribe, tts
 from app.core.config import get_settings
+from app.core.rate_limit import RateLimitMiddleware
 
 settings = get_settings()
 
@@ -40,12 +41,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware, max_requests=120, window_seconds=60)
 
 # Phase 1 canonical routes (used by tests and Step 10 frontend snippet)
 app.include_router(health.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
 app.include_router(transcribe.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(tts.router, prefix="/api")
 
 
 @app.get("/")
@@ -60,10 +63,16 @@ async def health_compat():
     data = health.health_check()
     if hasattr(data, "__await__"):
         data = await data
+    try:
+        import edge_tts  # noqa: F401
+
+        tts_ready = True
+    except ImportError:
+        tts_ready = False
     return {
         **data,
         "version": settings.app_version,
-        "models": {"whisper": True, "llm": True, "tts": False},
+        "models": {"whisper": True, "llm": True, "tts": tts_ready},
         "compute": None,
     }
 

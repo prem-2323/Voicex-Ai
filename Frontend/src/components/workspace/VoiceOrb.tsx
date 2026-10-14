@@ -36,6 +36,8 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, volume, onClick }) =>
         return 'Speaking...';
       case 'interrupted':
         return 'Interrupted';
+      case 'error':
+        return 'Error';
       case 'idle':
       default:
         return 'Ready';
@@ -72,6 +74,8 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, volume, onClick }) =>
               ? 'bg-[#141C2B] border-[#8B5CF6]/80'
               : state === 'interrupted'
               ? 'bg-[#141C2B] border-amber-500/80 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
+              : state === 'error'
+              ? 'bg-[#141C2B] border-rose-500/80 shadow-[0_0_20px_rgba(244,63,94,0.2)]'
               : 'bg-[#141C2B] border-[#273247] hover:border-[#8B5CF6]/50'
           }`}
           style={{
@@ -82,6 +86,8 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, volume, onClick }) =>
                 ? 'radial-gradient(circle at 50% 50%, #201b3b 0%, #141C2B 65%, #0E1420 100%)'
                 : state === 'thinking' || state === 'transcribing'
                 ? 'radial-gradient(circle at 50% 50%, #1c1833 0%, #141C2B 70%, #0E1420 100%)'
+                : state === 'error'
+                ? 'radial-gradient(circle at 50% 50%, #29121a 0%, #141C2B 70%, #0E1420 100%)'
                 : 'radial-gradient(circle at 50% 50%, #192335 0%, #141C2B 80%, #0E1420 100%)',
           }}
         >
@@ -144,6 +150,12 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, volume, onClick }) =>
             {state === 'interrupted' && (
               <div className="w-8 h-8 rounded-full border border-amber-500/50 bg-amber-500/10 flex items-center justify-center">
                 <div className="w-2.5 h-2.5 bg-amber-400 rounded-xs" />
+              </div>
+            )}
+
+            {state === 'error' && (
+              <div className="w-8 h-8 rounded-full border border-rose-500/50 bg-rose-500/10 flex items-center justify-center">
+                <div className="w-2.5 h-2.5 bg-rose-400 rounded-xs" />
               </div>
             )}
           </div>

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type VoiceState = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'interrupted';
+export type VoiceState = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'interrupted' | 'error';
 
 export type LanguageCode = 'en' | 'hi' | 'auto';
 

@@ -94,6 +94,26 @@ async def _check_llm() -> dict:
     }
 
 
+def _check_tts() -> dict:
+    try:
+        import edge_tts  # noqa: F401
+    except ImportError:
+        return {
+            "name": "Edge-TTS",
+            "status": "not_integrated",
+            "detail": "edge-tts package is not installed.",
+        }
+    from app.services.tts import ALLOWED_VOICES, DEFAULT_VOICE
+
+    return {
+        "name": "Edge-TTS",
+        "status": "ready",
+        "default_voice": DEFAULT_VOICE,
+        "voices": sorted(ALLOWED_VOICES),
+        "detail": "Online Microsoft speech service (requires internet).",
+    }
+
+
 @router.get("/models")
 async def get_model_status():
     stt = _check_stt()
@@ -103,10 +123,7 @@ async def get_model_status():
     return {
         "stt": stt,
         "llm": await _check_llm(),
-        "tts": {
-            "name": "Piper or Kokoro",
-            "status": "not_integrated",
-        },
+        "tts": _check_tts(),
         "vad": {
             "name": "Silero VAD",
             "status": "not_integrated",

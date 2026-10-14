@@ -62,10 +62,24 @@ async def transcribe(file: UploadFile = File(...)):
         }
     except HTTPException:
         raise
-    except RuntimeError as exc:
-        logger.exception("Transcription failed")
-        raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
+        msg = str(exc).lower()
+        exc_type = type(exc).__name__.lower()
+        if (
+            "invalid data" in msg
+            or "invaliddata" in exc_type
+            or "corrupt" in msg
+            or "could not find codec" in msg
+            or "header missing" in msg
+            or "unsupported codec" in msg
+            or "does not contain any stream" in msg
+        ):
+            logger.warning("Corrupted or unreadable audio file: %s", exc)
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid or corrupted audio file.",
+            ) from exc
+
         logger.exception("Transcription failed")
         raise HTTPException(
             status_code=500, detail=f"Transcription failed: {exc}"

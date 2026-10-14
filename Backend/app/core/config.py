@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:3b"
     ollama_timeout_seconds: float = 120.0
+    tts_default_voice: str = "en-US-AriaNeural"
+    tts_audio_dir: str = "generated_audio"
+    tts_timeout_seconds: float = 60.0
+    tts_retention_seconds: int = 3600
 
     model_config = SettingsConfigDict(
         env_file=".env",

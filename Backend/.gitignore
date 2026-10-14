@@ -5,3 +5,6 @@ __pycache__/
 .env
 *.log
 models/
+generated_audio/
+voice_test.mp3
+test_tts_output.mp3

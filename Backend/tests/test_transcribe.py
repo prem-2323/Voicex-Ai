@@ -72,3 +72,15 @@ def test_transcribe_real_audio_file():
     assert len(data["transcription"]["text"]) > 0
     assert data["transcription"]["language"] == "en"
     assert data["transcription"]["processing_time_ms"] > 0
+
+
+def test_transcribe_rejects_corrupted_audio():
+    corrupted_bytes = b"RIFF\x00\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00corrupted_payload_data"
+    response = client.post(
+        "/api/transcribe",
+        files={"file": ("corrupt.wav", corrupted_bytes, "audio/wav")},
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert "Invalid or corrupted audio file" in data.get("detail", "")
+

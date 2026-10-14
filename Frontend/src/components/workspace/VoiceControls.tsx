@@ -73,9 +73,10 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
       onStopListening();
     } else if (state === 'speaking' || state === 'thinking') {
       onCancel();
-    } else {
+    } else if (state === 'idle') {
       onStartListening();
     }
+    // transcribing / interrupted: button disabled, ignore clicks.
   };
 
   const handleTextSubmit = (e: React.FormEvent) => {
@@ -109,7 +110,8 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
 
         <button
           onClick={handleMicClick}
-          className={`relative z-10 w-20 h-20 rounded-full flex flex-col items-center justify-center transition-all duration-200 shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080B14] ${
+          disabled={state === 'transcribing' || state === 'interrupted'}
+          className={`relative z-10 w-20 h-20 rounded-full flex flex-col items-center justify-center transition-all duration-200 shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080B14] disabled:opacity-50 disabled:cursor-wait ${
             state === 'listening'
               ? 'bg-cyan-500 text-[#080B14] hover:bg-cyan-400 shadow-[0_0_30px_rgba(34,211,238,0.5)] scale-105'
               : state === 'speaking' || state === 'thinking'

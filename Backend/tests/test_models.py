@@ -29,7 +29,13 @@ def test_models_llm_reports_ready_when_tag_installed():
     assert data["llm"]["name"] == "qwen2.5:3b"
 
 
+def test_models_tts_reports_ready_when_package_installed():
+    data = client.get("/api/models").json()
+    assert data["tts"]["status"] == "ready"
+    assert data["tts"]["name"] == "Edge-TTS"
+    assert "en-US-AriaNeural" in data["tts"]["voices"]
+
+
 def test_models_pending_integrations_stay_placeholder():
     data = client.get("/api/models").json()
-    assert data["tts"]["status"] == "not_integrated"
     assert data["vad"]["status"] == "not_integrated"

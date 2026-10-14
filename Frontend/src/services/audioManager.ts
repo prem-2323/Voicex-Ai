@@ -18,6 +18,8 @@ class AudioManager {
   private isSpeaking: boolean = false;
   private dataArray: Uint8Array | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
+  private backendAudio: HTMLAudioElement | null = null;
+  private backendAudioUrl: string | null = null;
   private onBargeInCallback: (() => void) | null = null;
   private vadInterval: number | null = null;
   private permissionState: 'prompt' | 'granted' | 'denied' | 'unsupported' = 'prompt';
@@ -277,8 +279,125 @@ class AudioManager {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    if (this.backendAudio) {
+      try {
+        this.backendAudio.pause();
+      } catch {
+        // ignore
+      }
+      this.backendAudio = null;
+    }
+    if (this.backendAudioUrl) {
+      try {
+        URL.revokeObjectURL(this.backendAudioUrl);
+      } catch {
+        // ignore
+      }
+      this.backendAudioUrl = null;
+    }
     this.isSpeaking = false;
     this.currentUtterance = null;
+  }
+
+  /**
+   * Play assistant speech synthesized by the backend /api/tts endpoint
+   * (Edge-TTS). Falls back to the Web Speech API when the backend
+   * request fails (e.g. offline or no internet for the TTS service).
+   */
+  public async speakViaBackend(
+    text: string,
+    options: {
+      baseUrl?: string;
+      voice?: string;
+      rate?: number;
+      lang?: 'en' | 'hi' | string;
+      onEnd?: () => void;
+      onError?: (err: unknown) => void;
+    } = {}
+  ): Promise<void> {
+    this.stopSpeaking();
+    const trimmed = text.trim().slice(0, 3000);
+    if (!trimmed) {
+      options.onEnd?.();
+      return;
+    }
+    const hasHindi = /[\u0900-\u097F]/.test(trimmed);
+    const voice =
+      options.voice || (hasHindi ? 'hi-IN-SwaraNeural' : 'en-US-AriaNeural');
+    const baseUrl = (options.baseUrl || '').replace(/\/$/, '');
+    try {
+      const response = await fetch(`${baseUrl}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmed, voice }),
+      });
+      if (!response.ok) {
+        throw new Error(`TTS HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      if (!blob || blob.size === 0) {
+        throw new Error('TTS returned empty audio');
+      }
+      this.playAudioBlob(blob, {
+        onEnd: options.onEnd,
+        onError: options.onError,
+      });
+    } catch (err) {
+      // Graceful fallback: local Web Speech synthesis so the user
+      // still hears the response.
+      try {
+        this.speak(trimmed, {
+          lang: options.lang,
+          rate: options.rate,
+          onEnd: options.onEnd,
+          onError: options.onError,
+        });
+      } catch (fallbackErr) {
+        options.onError?.(fallbackErr);
+      }
+    }
+  }
+
+  /**
+   * Play a raw audio blob (e.g. from /api/tts) via an object URL.
+   * Revokes the URL when playback ends or fails.
+   */
+  public playAudioBlob(
+    blob: Blob,
+    options: { onEnd?: () => void; onError?: (err: unknown) => void } = {}
+  ): void {
+    if (typeof window === 'undefined') {
+      options.onEnd?.();
+      return;
+    }
+    this.stopSpeaking();
+    this.isSpeaking = true;
+    const url = URL.createObjectURL(blob);
+    this.backendAudioUrl = url;
+    const audio = new Audio(url);
+    this.backendAudio = audio;
+    audio.onended = () => {
+      if (this.backendAudioUrl === url) {
+        URL.revokeObjectURL(url);
+        this.backendAudioUrl = null;
+      }
+      this.backendAudio = null;
+      this.isSpeaking = false;
+      options.onEnd?.();
+    };
+    audio.onerror = () => {
+      if (this.backendAudioUrl === url) {
+        URL.revokeObjectURL(url);
+        this.backendAudioUrl = null;
+      }
+      this.backendAudio = null;
+      this.isSpeaking = false;
+      options.onError?.(new Error('Audio playback failed'));
+    };
+    audio.play().catch((err) => {
+      this.isSpeaking = false;
+      options.onError?.(err);
+    });
   }
 
   public isAssistantSpeaking(): boolean {
