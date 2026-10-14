@@ -11,6 +11,7 @@ from app.services.tts import (
     MAX_TEXT_LENGTH,
     delete_file_quietly,
     purge_stale_files,
+    resolve_voice,
     synthesize_to_file,
 )
 
@@ -32,11 +33,12 @@ class TTSRequest(BaseModel):
 
 @router.post("/tts")
 async def text_to_speech(request: TTSRequest):
-    if request.voice not in ALLOWED_VOICES:
+    voice = resolve_voice(request.voice)
+    if voice not in ALLOWED_VOICES:
         raise HTTPException(status_code=400, detail="Unsupported voice")
     try:
         purge_stale_files()
-        filepath = await synthesize_to_file(request.text, request.voice)
+        filepath = await synthesize_to_file(request.text, voice)
         return FileResponse(
             path=str(filepath),
             media_type="audio/mpeg",

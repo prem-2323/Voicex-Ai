@@ -42,13 +42,26 @@ function encodeWav(samples: Float32Array, sampleRate = 16000): Blob {
   return new Blob([view], { type: 'audio/wav' });
 }
 
+const PCM_WORKLET_CODE = `
+class VoiceXPcmProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input[0] && input[0].length > 0) {
+      this.port.postMessage(input[0]);
+    }
+    return true;
+  }
+}
+registerProcessor('voicex-pcm-processor', VoiceXPcmProcessor);
+`;
+
 class AudioManager {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private micStream: MediaStream | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private processorNode: ScriptProcessorNode | null = null;
-  private silentGainNode: GainNode | null = null;
+  private workletNode: AudioWorkletNode | null = null;
+  private workletUrl: string | null = null;
   private pcmBuffers: Float32Array[] = [];
   private pcmSampleCount: number = 0;
   private isListening: boolean = false;
@@ -138,38 +151,41 @@ class AudioManager {
       this.sourceNode = this.audioContext.createMediaStreamSource(this.micStream);
       this.sourceNode.connect(this.analyser);
 
-      // Setup high-fidelity 16kHz PCM audio capture
-      try {
-        const bufferSize = 4096;
-        this.processorNode = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
-        this.silentGainNode = this.audioContext.createGain();
-        this.silentGainNode.gain.value = 0;
-
-        const targetRate = 16000;
-        this.processorNode.onaudioprocess = (e: AudioProcessingEvent) => {
-          if (!this.isListening) return;
-          const inputData = e.inputBuffer.getChannelData(0);
-          const currentRate = this.audioContext?.sampleRate || 48000;
-          if (currentRate === targetRate) {
-            this.pcmBuffers.push(new Float32Array(inputData));
-            this.pcmSampleCount += inputData.length;
-          } else {
-            const step = currentRate / targetRate;
-            const newLen = Math.floor(inputData.length / step);
-            const downsampled = new Float32Array(newLen);
-            for (let i = 0; i < newLen; i++) {
-              downsampled[i] = inputData[Math.floor(i * step)];
-            }
-            this.pcmBuffers.push(downsampled);
-            this.pcmSampleCount += downsampled.length;
+      // Setup modern high-fidelity 16kHz PCM audio capture via AudioWorklet (0 deprecations)
+      if (this.audioContext && 'audioWorklet' in this.audioContext) {
+        try {
+          if (!this.workletUrl) {
+            const blob = new Blob([PCM_WORKLET_CODE], { type: 'application/javascript' });
+            this.workletUrl = URL.createObjectURL(blob);
+            await this.audioContext.audioWorklet.addModule(this.workletUrl);
           }
-        };
 
-        this.sourceNode.connect(this.processorNode);
-        this.processorNode.connect(this.silentGainNode);
-        this.silentGainNode.connect(this.audioContext.destination);
-      } catch (procErr) {
-        console.warn('ScriptProcessor setup skipped, falling back to MediaRecorder:', procErr);
+          this.workletNode = new AudioWorkletNode(this.audioContext, 'voicex-pcm-processor');
+          const targetRate = 16000;
+          this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+            if (!this.isListening) return;
+            const inputData = e.data;
+            if (!inputData) return;
+            const currentRate = this.audioContext?.sampleRate || 48000;
+            if (currentRate === targetRate) {
+              this.pcmBuffers.push(new Float32Array(inputData));
+              this.pcmSampleCount += inputData.length;
+            } else {
+              const step = currentRate / targetRate;
+              const newLen = Math.floor(inputData.length / step);
+              const downsampled = new Float32Array(newLen);
+              for (let i = 0; i < newLen; i++) {
+                downsampled[i] = inputData[Math.floor(i * step)];
+              }
+              this.pcmBuffers.push(downsampled);
+              this.pcmSampleCount += downsampled.length;
+            }
+          };
+
+          this.sourceNode.connect(this.workletNode);
+        } catch (procErr) {
+          console.warn('AudioWorklet setup skipped, falling back to MediaRecorder:', procErr);
+        }
       }
 
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
@@ -269,21 +285,13 @@ class AudioManager {
       this.micStream.getTracks().forEach((track) => track.stop());
       this.micStream = null;
     }
-    if (this.processorNode) {
+    if (this.workletNode) {
       try {
-        this.processorNode.disconnect();
+        this.workletNode.disconnect();
       } catch {
         // ignore
       }
-      this.processorNode = null;
-    }
-    if (this.silentGainNode) {
-      try {
-        this.silentGainNode.disconnect();
-      } catch {
-        // ignore
-      }
-      this.silentGainNode = null;
+      this.workletNode = null;
     }
     if (this.sourceNode) {
       try {
@@ -433,8 +441,24 @@ class AudioManager {
       return;
     }
     const hasHindi = /[\u0900-\u097F]/.test(trimmed);
-    const voice =
-      options.voice || (hasHindi ? 'hi-IN-SwaraNeural' : 'en-US-AriaNeural');
+    const legacyVoiceMap: Record<string, string> = {
+      'voice-aura': 'en-US-AriaNeural',
+      'voice-neel': 'en-IN-PrabhatNeural',
+      'voice-priya': 'hi-IN-SwaraNeural',
+      'voice-echo': 'en-US-GuyNeural',
+    };
+    const validVoices = new Set([
+      'en-US-AriaNeural',
+      'en-US-GuyNeural',
+      'en-IN-NeerjaNeural',
+      'en-IN-PrabhatNeural',
+      'hi-IN-SwaraNeural',
+      'hi-IN-MadhurNeural',
+    ]);
+    let voice = options.voice ? (legacyVoiceMap[options.voice] || options.voice) : '';
+    if (!validVoices.has(voice)) {
+      voice = hasHindi ? 'hi-IN-SwaraNeural' : 'en-US-AriaNeural';
+    }
     const baseUrl = (options.baseUrl || '').replace(/\/$/, '');
     try {
       const response = await fetch(`${baseUrl}/api/tts`, {

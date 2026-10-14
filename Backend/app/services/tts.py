@@ -28,8 +28,20 @@ ALLOWED_VOICES = frozenset(
     }
 )
 
+VOICE_ALIASES = {
+    "voice-aura": "en-US-AriaNeural",
+    "voice-neel": "en-IN-PrabhatNeural",
+    "voice-priya": "hi-IN-SwaraNeural",
+    "voice-echo": "en-US-GuyNeural",
+}
+
 DEFAULT_VOICE = "en-US-AriaNeural"
 MAX_TEXT_LENGTH = 3000
+
+
+def resolve_voice(voice: str) -> str:
+    """Resolve legacy frontend voice IDs to their neural equivalents."""
+    return VOICE_ALIASES.get(voice, voice)
 
 
 def get_audio_dir() -> Path:

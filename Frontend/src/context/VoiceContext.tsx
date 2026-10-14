@@ -13,7 +13,7 @@ import {
   BackendHealthStatus,
   LanguageCode,
 } from '../types/voice';
-import { DEFAULT_SETTINGS, INITIAL_METRICS_PREVIEW } from '../config/apiConfig';
+import { AVAILABLE_VOICES, DEFAULT_SETTINGS, INITIAL_METRICS_PREVIEW } from '../config/apiConfig';
 import { voiceClient } from '../services/voiceClient';
 import { audioManager } from '../services/audioManager';
 
@@ -125,7 +125,23 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('voicex_settings');
-      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const legacyMap: Record<string, string> = {
+          'voice-aura': 'en-US-AriaNeural',
+          'voice-neel': 'en-IN-PrabhatNeural',
+          'voice-priya': 'hi-IN-SwaraNeural',
+          'voice-echo': 'en-US-GuyNeural',
+        };
+        const voiceId = legacyMap[parsed.selectedVoiceId] || parsed.selectedVoiceId;
+        const isValid = AVAILABLE_VOICES.some((v) => v.id === voiceId);
+        return {
+          ...DEFAULT_SETTINGS,
+          ...parsed,
+          selectedVoiceId: isValid ? voiceId : DEFAULT_SETTINGS.selectedVoiceId,
+        };
+      }
+      return DEFAULT_SETTINGS;
     } catch {
       return DEFAULT_SETTINGS;
     }
