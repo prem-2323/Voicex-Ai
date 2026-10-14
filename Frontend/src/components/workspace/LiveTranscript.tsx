@@ -45,7 +45,7 @@ export const LiveTranscript: React.FC<LiveTranscriptProps> = ({
             <span aria-hidden="true">·</span>
             <span>{isFinal ? 'Transcribed' : isListening ? 'Listening input...' : 'Processing'}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">Whisper-v3-Turbo</span>
+            <span className="font-mono tabular-nums">Faster-Whisper</span>
           </div>
 
           {transcript && (

@@ -230,11 +230,11 @@ class VoiceClient {
             ramTotalGb: 16.0,
             sttModel: 'Faster-Whisper (base)',
             llmModel: 'Qwen 2.5 3B (Ollama)',
-            ttsModel: 'Web Speech API',
+            ttsModel: 'Edge-TTS Neural',
             modelReadiness: {
               stt: true,
               llm: true,
-              tts: false,
+              tts: true,
             },
           },
         });
