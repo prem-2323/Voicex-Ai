@@ -18,7 +18,9 @@ export const FastApiGuideModal: React.FC<FastApiGuideModalProps> = ({ isOpen, on
 
   if (!isOpen) return null;
 
-  const installCmd = 'pip install fastapi uvicorn websockets numpy torch';
+  const installCmd = 'pip install -r requirements.txt';
+  const ollamaCmd = 'ollama run qwen2.5:3b';
+  const runCmd = 'uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload';
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(PYTHON_FASTAPI_BACKEND_CODE);
@@ -43,10 +45,10 @@ export const FastApiGuideModal: React.FC<FastApiGuideModalProps> = ({ isOpen, on
             </div>
             <div>
               <h3 className="text-xs font-semibold text-[#F1F5F9]">
-                FastAPI Local Inference Integration
+                FastAPI Local Inference Architecture
               </h3>
               <p className="text-[11px] text-[#94A3B8]">
-                Spin up your local open-weight server in under 2 minutes
+                Faster-Whisper + Ollama (Qwen 2.5 3B) + Microsoft Edge-TTS
               </p>
             </div>
           </div>
@@ -63,7 +65,7 @@ export const FastApiGuideModal: React.FC<FastApiGuideModalProps> = ({ isOpen, on
         {/* Modal Body */}
         <div className="p-4 overflow-y-auto space-y-4 text-xs text-[#94A3B8]">
           <div>
-            <p className="text-[#F1F5F9] font-medium mb-1">1. Install Dependencies</p>
+            <p className="text-[#F1F5F9] font-medium mb-1">1. Install Backend Dependencies</p>
             <div className="bg-[#0B0F17] border border-[#273247] rounded-md p-2.5 flex items-center justify-between font-mono text-[#22D3EE] text-[11px]">
               <code>{installCmd}</code>
               <button
@@ -77,25 +79,32 @@ export const FastApiGuideModal: React.FC<FastApiGuideModalProps> = ({ isOpen, on
           </div>
 
           <div>
+            <p className="text-[#F1F5F9] font-medium mb-1">2. Start Ollama Model</p>
+            <div className="bg-[#0B0F17] border border-[#273247] rounded-md p-2.5 flex items-center justify-between font-mono text-[#22D3EE] text-[11px]">
+              <code>{ollamaCmd}</code>
+            </div>
+          </div>
+
+          <div>
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[#F1F5F9] font-medium">2. Run Local Python Server (server.py)</p>
+              <p className="text-[#F1F5F9] font-medium">3. Production FastAPI Structure</p>
               <button
                 onClick={handleCopyCode}
                 className="flex items-center gap-1 text-[11px] text-[#8B5CF6] hover:underline"
               >
                 {copiedCode ? <Check className="w-3.5 h-3.5 text-[#22C55E]" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedCode ? 'Copied script' : 'Copy Python script'}</span>
+                <span>{copiedCode ? 'Copied script' : 'Copy reference'}</span>
               </button>
             </div>
-            <pre className="bg-[#0B0F17] border border-[#273247] rounded-md p-3 overflow-x-auto text-[11px] font-mono text-slate-300 leading-relaxed max-h-52">
+            <pre className="bg-[#0B0F17] border border-[#273247] rounded-md p-3 overflow-x-auto text-[11px] font-mono text-slate-300 leading-relaxed max-h-44">
               {PYTHON_FASTAPI_BACKEND_CODE}
             </pre>
           </div>
 
           <div className="p-3 bg-[#0E1420] border border-[#273247] rounded-md">
-            <p className="font-semibold text-[#8B5CF6] mb-0.5">Real-time Turn Protocol</p>
+            <p className="font-semibold text-[#8B5CF6] mb-0.5">Real-time Pipeline Protocol</p>
             <p className="text-[11px] text-[#94A3B8] leading-relaxed">
-              When your Python server starts on <code className="text-[#22D3EE] font-mono">http://localhost:8000</code>, VoiceX AI automatically connects over WebSocket to stream Whisper transcripts and Kokoro audio packets with sub-350ms latency.
+              When the FastAPI backend runs on <code className="text-[#22D3EE] font-mono">http://127.0.0.1:8000</code>, VoiceX AI automatically streams audio to <code className="text-[#22D3EE] font-mono">/api/transcribe</code>, prompts Qwen 2.5 3B via <code className="text-[#22D3EE] font-mono">/api/chat</code>, and synthesizes neural speech audio via <code className="text-[#22D3EE] font-mono">/api/tts</code>.
             </p>
           </div>
         </div>

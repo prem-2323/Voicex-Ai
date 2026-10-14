@@ -49,13 +49,30 @@ export const SettingsView: React.FC = () => {
     loadDevices();
   }, []);
 
-  const handleTestVoice = (sampleText: string) => {
+  const handleTestVoice = async (sampleText: string, voiceId?: string) => {
     setIsTestingVoice(true);
-    audioManager.speak(sampleText, {
-      rate: settings.speechRate,
-      onEnd: () => setIsTestingVoice(false),
-      onError: () => setIsTestingVoice(false),
-    });
+    try {
+      if (backendStatus.online) {
+        await audioManager.speakViaBackend(sampleText, {
+          voice: voiceId || settings.selectedVoiceId,
+          baseUrl: settings.apiBaseUrl,
+        });
+      } else {
+        audioManager.speak(sampleText, {
+          rate: settings.speechRate,
+          onEnd: () => setIsTestingVoice(false),
+          onError: () => setIsTestingVoice(false),
+        });
+      }
+    } catch {
+      audioManager.speak(sampleText, {
+        rate: settings.speechRate,
+        onEnd: () => setIsTestingVoice(false),
+        onError: () => setIsTestingVoice(false),
+      });
+    } finally {
+      setIsTestingVoice(false);
+    }
   };
 
   const handlePingBackend = async () => {
@@ -147,7 +164,7 @@ export const SettingsView: React.FC = () => {
                 Supported Neural TTS Voice
               </label>
               <p className="text-[11px] text-[#94A3B8] mb-2.5">
-                Installed local weights: Kokoro-82M multilingual voice profiles.
+                FastAPI Edge-TTS neural speech voices across English & Hindi.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -169,7 +186,7 @@ export const SettingsView: React.FC = () => {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleTestVoice(voice.sampleText);
+                            handleTestVoice(voice.sampleText, voice.id);
                           }}
                           disabled={isTestingVoice}
                           className="px-1.5 py-0.5 rounded bg-[#141C2B] hover:bg-[#202c42] text-[#22D3EE] text-[10px] flex items-center gap-1 border border-[#273247]"

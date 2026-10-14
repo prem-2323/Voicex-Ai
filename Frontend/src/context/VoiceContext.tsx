@@ -232,9 +232,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           vramTotalGb: result.compute?.vram_total_gb ?? null,
           ramUsedGb: result.compute?.ram_used_gb ?? 4.0,
           ramTotalGb: result.compute?.ram_total_gb ?? 16.0,
-          sttModel: 'Whisper-v3-Turbo',
-          llmModel: 'Llama-3.2-3B-Instruct',
-          ttsModel: 'Kokoro-82M',
+          sttModel: 'Faster-Whisper (base)',
+          llmModel: 'Qwen 2.5 3B (Ollama)',
+          ttsModel: 'Edge-TTS Neural',
           modelReadiness: {
             stt: Boolean(result.modelsLoaded?.whisper),
             llm: Boolean(result.modelsLoaded?.llm),
@@ -305,6 +305,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setLiveTranscript({ text: '', isFinal: false });
     setLiveStreamingText('');
     setVoiceState('idle');
+
+    // Async sync with backend
+    import('../services/api').then(({ createConversationSession }) => {
+      createConversationSession(newConv.id, newConv.title).catch(() => {});
+    });
   }, [settings.language]);
 
   const loadConversation = useCallback((id: string) => {
@@ -331,12 +336,23 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       return filtered;
     });
+
+    // Async sync with backend
+    import('../services/api').then(({ deleteConversationSession }) => {
+      deleteConversationSession(id).catch(() => {});
+    });
   }, []);
 
   const renameConversation = useCallback((id: string, newTitle: string) => {
+    const trimmed = newTitle.trim();
     setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, title: newTitle.trim() || c.title, updatedAt: Date.now() } : c))
+      prev.map((c) => (c.id === id ? { ...c, title: trimmed || c.title, updatedAt: Date.now() } : c))
     );
+
+    // Async sync with backend
+    import('../services/api').then(({ renameConversationSession }) => {
+      renameConversationSession(id, trimmed).catch(() => {});
+    });
   }, []);
 
   const clearAllConversations = useCallback(() => {
@@ -352,6 +368,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setActiveConvId(fresh.id);
     setLiveTranscript({ text: '', isFinal: false });
     setLiveStreamingText('');
+
+    // Async sync with backend
+    import('../services/api').then(({ clearAllConversationSessions }) => {
+      clearAllConversationSessions().catch(() => {});
+    });
   }, []);
 
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {

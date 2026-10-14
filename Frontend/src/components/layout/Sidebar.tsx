@@ -31,6 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpenMobile = false, onCloseM
     activeConversation,
     loadConversation,
     deleteConversation,
+    backendStatus,
   } = useVoice();
 
   const navItems: { id: TabScreen; label: string; icon: React.ReactNode }[] = [
@@ -76,8 +77,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpenMobile = false, onCloseM
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-semibold text-sm tracking-tight text-[#F1F5F9]">VoiceX AI</span>
-                <span className="text-[9px] font-mono uppercase px-1 py-0.2 rounded bg-[#192335] text-[#22D3EE] border border-[#273247]">
-                  LOCAL
+                <span
+                  className={`text-[9px] font-mono uppercase px-1 py-0.2 rounded border ${
+                    backendStatus.online
+                      ? 'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/30'
+                      : 'bg-[#192335] text-[#22D3EE] border-[#273247]'
+                  }`}
+                >
+                  {backendStatus.online ? 'FASTAPI' : 'LOCAL'}
                 </span>
               </div>
               <p className="text-[10px] text-[#94A3B8] truncate">Open-Weight Assistant</p>

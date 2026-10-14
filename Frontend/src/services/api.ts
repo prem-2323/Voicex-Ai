@@ -113,6 +113,84 @@ export async function speakResponse(
   return audio;
 }
 
+export async function getBackendTelemetry() {
+  const response = await fetch(`${API_BASE_URL}/api/performance/telemetry`);
+  if (!response.ok) {
+    throw new Error(`Telemetry failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function runPipelineBenchmark() {
+  const response = await fetch(`${API_BASE_URL}/api/performance/benchmark`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`Benchmark failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchConversations() {
+  const response = await fetch(`${API_BASE_URL}/api/conversations`);
+  if (!response.ok) {
+    throw new Error(`Fetch conversations failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function createConversationSession(sessionId: string, title?: string) {
+  const response = await fetch(`${API_BASE_URL}/api/conversations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, title }),
+  });
+  if (!response.ok) {
+    throw new Error(`Create conversation failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function renameConversationSession(sessionId: string, title: string) {
+  const response = await fetch(`${API_BASE_URL}/api/conversations/${sessionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!response.ok) {
+    throw new Error(`Rename conversation failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function deleteConversationSession(sessionId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/conversations/${sessionId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`Delete conversation failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function clearAllConversationSessions() {
+  const response = await fetch(`${API_BASE_URL}/api/conversations`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`Clear conversations failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getAvailableVoices() {
+  const response = await fetch(`${API_BASE_URL}/api/tts/voices`);
+  if (!response.ok) {
+    throw new Error(`Get voices failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 /**
  * End-to-end voice processing reference workflow (Phase 5 Step 3)
  */
@@ -138,3 +216,5 @@ export async function processVoice(
 
   return { transcript, answer, audio };
 }
+
+

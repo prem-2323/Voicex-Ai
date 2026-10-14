@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from app.services.telemetry import get_compute_telemetry
+
 router = APIRouter(tags=["Health"])
 
 
@@ -9,4 +11,6 @@ def health_check():
         "success": True,
         "service": "VoiceX AI Backend",
         "status": "running",
+        "compute": get_compute_telemetry(),
     }
+

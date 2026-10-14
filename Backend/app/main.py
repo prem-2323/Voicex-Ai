@@ -4,7 +4,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, health, models, transcribe, tts
+from app.api import (
+    chat,
+    conversations,
+    health,
+    models,
+    performance,
+    transcribe,
+    tts,
+)
 from app.core.config import get_settings
 from app.core.rate_limit import RateLimitMiddleware
 
@@ -49,6 +57,8 @@ app.include_router(models.router, prefix="/api")
 app.include_router(transcribe.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(tts.router, prefix="/api")
+app.include_router(conversations.router, prefix="/api")
+app.include_router(performance.router, prefix="/api")
 
 
 @app.get("/")
@@ -73,7 +83,7 @@ async def health_compat():
         **data,
         "version": settings.app_version,
         "models": {"whisper": True, "llm": True, "tts": tts_ready},
-        "compute": None,
+        "compute": data.get("compute"),
     }
 
 

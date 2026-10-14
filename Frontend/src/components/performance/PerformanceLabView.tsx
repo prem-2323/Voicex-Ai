@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Activity,
   Play,
@@ -24,56 +24,90 @@ export const PerformanceLabView: React.FC = () => {
   const [isRunningBenchmark, setIsRunningBenchmark] = useState(false);
   const [activeMetrics, setActiveMetrics] = useState<PerformanceMetrics>(metrics);
 
+  // Keep metrics in sync with voice context updates
+  useEffect(() => {
+    setActiveMetrics(metrics);
+  }, [metrics]);
+
   const isSimulated = !backendStatus.online || activeMetrics.isSimulatedPreview;
 
-  // Run an interactive client-side latency benchmark test
+  // Run an interactive benchmark test (calls real backend /api/performance/benchmark)
   const handleRunBenchmark = async () => {
     setIsRunningBenchmark(true);
-    const start = performance.now();
+    try {
+      if (backendStatus.online) {
+        const { runPipelineBenchmark } = await import('../../services/api');
+        const bench = await runPipelineBenchmark();
 
-    // STT simulation / probe
-    await new Promise((r) => setTimeout(r, 120 + Math.random() * 25));
-    const stt = Math.round(performance.now() - start);
+        const newHistoryEntry: BenchmarkHistoryEntry = {
+          id: `bm-${Date.now()}`,
+          timestamp: Date.now(),
+          label: `Live Run #${activeMetrics.benchmarkHistory.length + 1} (${bench.models?.llm || 'Qwen 2.5'})`,
+          sttMs: bench.sttDurationMs,
+          ttftMs: bench.timeToFirstTokenMs,
+          ttfaMs: bench.timeToFirstAudioMs,
+          totalMs: bench.totalResponseMs,
+          rtf: bench.realTimeFactor,
+          isSimulated: false,
+        };
 
-    // TTFT probe
-    const llmStart = performance.now();
-    await new Promise((r) => setTimeout(r, 185 + Math.random() * 30));
-    const ttft = Math.round(performance.now() - llmStart);
+        setActiveMetrics((prev) => ({
+          ...prev,
+          sttDurationMs: bench.sttDurationMs,
+          timeToFirstTokenMs: bench.timeToFirstTokenMs,
+          timeToFirstAudioMs: bench.timeToFirstAudioMs,
+          totalResponseMs: bench.totalResponseMs,
+          realTimeFactor: bench.realTimeFactor,
+          successfulTurnRate: 100.0,
+          isSimulatedPreview: false,
+          deviceCompute: {
+            ...prev.deviceCompute,
+            deviceType: bench.deviceCompute?.device || prev.deviceCompute.deviceType,
+            hostPlatform: bench.deviceCompute?.platform || prev.deviceCompute.hostPlatform,
+            isGpuAvailable: bench.deviceCompute?.gpu_available ?? prev.deviceCompute.isGpuAvailable,
+            vramUsedGb: bench.deviceCompute?.vram_allocated_gb ?? prev.deviceCompute.vramUsedGb,
+            vramTotalGb: bench.deviceCompute?.vram_total_gb ?? prev.deviceCompute.vramTotalGb,
+            ramUsedGb: bench.deviceCompute?.ram_used_gb ?? prev.deviceCompute.ramUsedGb,
+            ramTotalGb: bench.deviceCompute?.ram_total_gb ?? prev.deviceCompute.ramTotalGb,
+          },
+          benchmarkHistory: [newHistoryEntry, ...prev.benchmarkHistory.slice(0, 9)],
+        }));
+      } else {
+        const start = performance.now();
+        await new Promise((r) => setTimeout(r, 150));
+        const stt = 1550;
+        const ttft = 320;
+        const ttfa = 1850;
+        const total = 3380;
+        const rtf = 0.16;
 
-    // TTFA probe
-    const ttsStart = performance.now();
-    await new Promise((r) => setTimeout(r, 85 + Math.random() * 20));
-    const ttfa = Math.round(stt + ttft + (performance.now() - ttsStart));
+        const newHistoryEntry: BenchmarkHistoryEntry = {
+          id: `bm-${Date.now()}`,
+          timestamp: Date.now(),
+          label: `Offline Baseline #${activeMetrics.benchmarkHistory.length + 1}`,
+          sttMs: stt,
+          ttftMs: ttft,
+          ttfaMs: ttfa,
+          totalMs: total,
+          rtf: rtf,
+          isSimulated: true,
+        };
 
-    // Full audio synthesis completion
-    await new Promise((r) => setTimeout(r, 130));
-    const total = Math.round(performance.now() - start);
-    const rtf = Number((0.16 + Math.random() * 0.04).toFixed(2));
-
-    const newHistoryEntry: BenchmarkHistoryEntry = {
-      id: `bm-${Date.now()}`,
-      timestamp: Date.now(),
-      label: `Manual Run #${activeMetrics.benchmarkHistory.length + 1}`,
-      sttMs: stt,
-      ttftMs: ttft,
-      ttfaMs: ttfa,
-      totalMs: total,
-      rtf: rtf,
-      isSimulated: isSimulated,
-    };
-
-    setActiveMetrics((prev) => ({
-      ...prev,
-      sttDurationMs: stt,
-      timeToFirstTokenMs: ttft,
-      timeToFirstAudioMs: ttfa,
-      totalResponseMs: total,
-      realTimeFactor: rtf,
-      isSimulatedPreview: isSimulated,
-      benchmarkHistory: [newHistoryEntry, ...prev.benchmarkHistory.slice(0, 9)],
-    }));
-
-    setIsRunningBenchmark(false);
+        setActiveMetrics((prev) => ({
+          ...prev,
+          sttDurationMs: stt,
+          timeToFirstTokenMs: ttft,
+          timeToFirstAudioMs: ttfa,
+          totalResponseMs: total,
+          realTimeFactor: rtf,
+          benchmarkHistory: [newHistoryEntry, ...prev.benchmarkHistory.slice(0, 9)],
+        }));
+      }
+    } catch (err) {
+      console.error('Benchmark failed:', err);
+    } finally {
+      setIsRunningBenchmark(false);
+    }
   };
 
   const waterfallTotal = Math.max(activeMetrics.totalResponseMs, 500);
@@ -150,7 +184,7 @@ export const PerformanceLabView: React.FC = () => {
             {activeMetrics.sttDurationMs}
             <span className="text-[10px] font-normal text-[#94A3B8] ml-1">ms</span>
           </div>
-          <div className="mt-0.5 text-[10px] text-[#94A3B8]">Whisper-v3</div>
+          <div className="mt-0.5 text-[10px] text-[#94A3B8]">Faster-Whisper</div>
         </div>
 
         <div className="bg-[#141C2B] border border-[#273247] rounded-lg p-3">
@@ -159,7 +193,7 @@ export const PerformanceLabView: React.FC = () => {
             {activeMetrics.timeToFirstTokenMs}
             <span className="text-[10px] font-normal text-[#94A3B8] ml-1">ms</span>
           </div>
-          <div className="mt-0.5 text-[10px] text-[#94A3B8]">Llama-3.2-3B</div>
+          <div className="mt-0.5 text-[10px] text-[#94A3B8]">Qwen 2.5 3B</div>
         </div>
 
         <div className="bg-[#141C2B] border border-[#273247] rounded-lg p-3">
@@ -186,7 +220,7 @@ export const PerformanceLabView: React.FC = () => {
             {activeMetrics.realTimeFactor}
             <span className="text-[10px] font-normal text-[#94A3B8] ml-1">x</span>
           </div>
-          <div className="mt-0.5 text-[10px] text-[#94A3B8]">Kokoro-82M</div>
+          <div className="mt-0.5 text-[10px] text-[#94A3B8]">Edge-TTS</div>
         </div>
 
         <div className="bg-[#141C2B] border border-[#273247] rounded-lg p-3">
@@ -261,7 +295,7 @@ export const PerformanceLabView: React.FC = () => {
           <div className="mt-3 space-y-2">
             <div className="flex items-center justify-between p-2 rounded bg-[#0E1420] border border-[#273247]/60">
               <div>
-                <p className="font-medium text-[#F1F5F9]">Whisper-v3-Turbo</p>
+                <p className="font-medium text-[#F1F5F9]">Faster-Whisper (base)</p>
                 <p className="text-[10px] text-[#94A3B8]">Multilingual STT (EN & HI)</p>
               </div>
               <div className="flex items-center gap-1 text-[11px]">
@@ -280,7 +314,7 @@ export const PerformanceLabView: React.FC = () => {
 
             <div className="flex items-center justify-between p-2 rounded bg-[#0E1420] border border-[#273247]/60">
               <div>
-                <p className="font-medium text-[#F1F5F9]">Llama-3.2-3B Instruct</p>
+                <p className="font-medium text-[#F1F5F9]">Qwen 2.5 3B (Ollama)</p>
                 <p className="text-[10px] text-[#94A3B8]">Low-latency Reasoning Engine</p>
               </div>
               <div className="flex items-center gap-1 text-[11px]">
@@ -299,7 +333,7 @@ export const PerformanceLabView: React.FC = () => {
 
             <div className="flex items-center justify-between p-2 rounded bg-[#0E1420] border border-[#273247]/60">
               <div>
-                <p className="font-medium text-[#F1F5F9]">Kokoro-82M v1.0</p>
+                <p className="font-medium text-[#F1F5F9]">Microsoft Edge-TTS</p>
                 <p className="text-[10px] text-[#94A3B8]">Neural Speech Synthesizer</p>
               </div>
               <div className="flex items-center gap-1 text-[11px]">

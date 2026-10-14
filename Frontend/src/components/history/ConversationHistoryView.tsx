@@ -29,6 +29,7 @@ export const ConversationHistoryView: React.FC = () => {
     renameConversation,
     clearAllConversations,
     createNewConversation,
+    backendStatus,
   } = useVoice();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,7 +97,18 @@ export const ConversationHistoryView: React.FC = () => {
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#273247]">
         <div>
-          <h2 className="text-lg md:text-xl font-bold text-[#F1F5F9]">Conversation History</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg md:text-xl font-bold text-[#F1F5F9]">Conversation History</h2>
+            <span
+              className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border ${
+                backendStatus.online
+                  ? 'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/30'
+                  : 'bg-[#192335] text-[#22D3EE] border-[#273247]'
+              }`}
+            >
+              {backendStatus.online ? 'FastAPI Synced' : 'Local Storage'}
+            </span>
+          </div>
           <p className="text-xs text-[#94A3B8] mt-0.5">
             Search, reopen, rename, or export local voice interactions.
           </p>

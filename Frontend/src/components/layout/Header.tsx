@@ -81,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenFastApiGuide }) => {
           ·
         </span>
         <span className="hidden lg:inline text-xs text-[#94A3B8] font-mono tabular-nums">
-          Whisper-v3 · Llama-3.2 · Kokoro
+          Faster-Whisper · Qwen-2.5-3B · Edge-TTS
         </span>
       </div>
 
