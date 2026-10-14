@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Mic, Square, AlertCircle, Globe, ChevronDown, Send } from 'lucide-react';
+import { Mic, Square, AlertCircle, Globe, ChevronDown, Send, Upload } from 'lucide-react';
 import { VoiceOrb } from './VoiceOrb';
 import { AudioVisualizer } from './AudioVisualizer';
 import { ConversationTurnPanel } from './ConversationTurnPanel';
@@ -29,6 +29,7 @@ export const WorkspaceView: React.FC = () => {
     toggleMute,
     updateSettings,
     sendTextMessage,
+    uploadAndProcessAudio,
     activeScenario,
     setScenario,
   } = useVoice();
@@ -139,33 +140,56 @@ export const WorkspaceView: React.FC = () => {
           {/* 2. Compact Live Audio Waveform (Visible ONLY while recording/speaking) */}
           <AudioVisualizer state={voiceState} height={28} />
 
-          {/* 3. Single Prominent Microphone Button */}
+          {/* 3. Single Prominent Microphone Button & Audio File Upload */}
           <div className="flex flex-col items-center mt-2 mb-2">
-            <button
-              onClick={handleMicClick}
-              className={`w-13 h-13 rounded-full flex items-center justify-center transition-all duration-150 shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8B5CF6] ${
-                voiceState === 'listening'
-                  ? 'bg-[#22D3EE] text-[#0B0F17] hover:bg-[#06B6D4] shadow-[0_0_16px_rgba(34,211,238,0.4)]'
-                  : voiceState === 'speaking' || voiceState === 'thinking'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                  : 'bg-[#8B5CF6] hover:bg-[#7C3AED] text-white active:scale-95'
-              }`}
-              aria-label={
-                voiceState === 'listening'
-                  ? 'Stop listening'
-                  : voiceState === 'speaking' || voiceState === 'thinking'
-                  ? 'Cancel response'
-                  : 'Start talking'
-              }
-            >
-              {voiceState === 'listening' ? (
-                <Square className="w-5 h-5 fill-current" />
-              ) : voiceState === 'speaking' || voiceState === 'thinking' ? (
-                <Square className="w-5 h-5 fill-current" />
-              ) : (
-                <Mic className="w-6 h-6" />
-              )}
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Audio Upload button */}
+              <label
+                className="w-10 h-10 rounded-full flex items-center justify-center bg-[#141C2B] hover:bg-[#1E293B] border border-[#273247] text-[#94A3B8] hover:text-[#22D3EE] cursor-pointer transition-colors shadow-sm"
+                title="Upload audio file (.wav, .mp3, .m4a, .webm, .flac)"
+              >
+                <input
+                  type="file"
+                  accept=".wav,.mp3,.m4a,.webm,.ogg,.flac"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      uploadAndProcessAudio(file);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+                <Upload className="w-4 h-4" />
+              </label>
+
+              {/* Main Microphone Button */}
+              <button
+                onClick={handleMicClick}
+                className={`w-13 h-13 rounded-full flex items-center justify-center transition-all duration-150 shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8B5CF6] ${
+                  voiceState === 'listening'
+                    ? 'bg-[#22D3EE] text-[#0B0F17] hover:bg-[#06B6D4] shadow-[0_0_16px_rgba(34,211,238,0.4)]'
+                    : voiceState === 'speaking' || voiceState === 'thinking' || voiceState === 'transcribing'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                    : 'bg-[#8B5CF6] hover:bg-[#7C3AED] text-white active:scale-95'
+                }`}
+                aria-label={
+                  voiceState === 'listening'
+                    ? 'Stop listening'
+                    : voiceState === 'speaking' || voiceState === 'thinking' || voiceState === 'transcribing'
+                    ? 'Cancel response'
+                    : 'Start talking'
+                }
+              >
+                {voiceState === 'listening' ? (
+                  <Square className="w-5 h-5 fill-current" />
+                ) : voiceState === 'speaking' || voiceState === 'thinking' || voiceState === 'transcribing' ? (
+                  <Square className="w-5 h-5 fill-current" />
+                ) : (
+                  <Mic className="w-6 h-6" />
+                )}
+              </button>
+            </div>
 
             {/* Keyboard shortcut hint */}
             <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-[#94A3B8]">
@@ -177,6 +201,8 @@ export const WorkspaceView: React.FC = () => {
                 M
               </kbd>
               <span>to speak</span>
+              <span className="text-[#475569]">·</span>
+              <span>Upload audio</span>
             </div>
           </div>
 

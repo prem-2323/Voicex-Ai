@@ -15,6 +15,12 @@ class Settings(BaseSettings):
         "http://localhost:3000,"
         "http://127.0.0.1:3000"
     )
+    whisper_model: str = "base"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:3b"
+    ollama_timeout_seconds: float = 120.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

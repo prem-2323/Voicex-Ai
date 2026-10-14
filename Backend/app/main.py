@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, models
+from app.api import chat, health, models, transcribe
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -44,6 +44,8 @@ app.add_middleware(
 # Phase 1 canonical routes (used by tests and Step 10 frontend snippet)
 app.include_router(health.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
+app.include_router(transcribe.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
 
 
 @app.get("/")
@@ -55,13 +57,13 @@ async def root():
 # it calls GET {base}/health and WS {base}/ws/voice (no /api prefix).
 @app.get("/health", include_in_schema=False)
 async def health_compat():
-    data = await health.health_check()
-    # Extend with fields the existing UI understands; extra keys
-    # do not break the Phase 1 tests which only assert status/service.
+    data = health.health_check()
+    if hasattr(data, "__await__"):
+        data = await data
     return {
         **data,
         "version": settings.app_version,
-        "models": {"whisper": False, "llm": False, "tts": False},
+        "models": {"whisper": True, "llm": True, "tts": False},
         "compute": None,
     }
 

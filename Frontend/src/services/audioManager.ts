@@ -21,6 +21,8 @@ class AudioManager {
   private onBargeInCallback: (() => void) | null = null;
   private vadInterval: number | null = null;
   private permissionState: 'prompt' | 'granted' | 'denied' | 'unsupported' = 'prompt';
+  private mediaRecorder: MediaRecorder | null = null;
+  private recordedChunks: Blob[] = [];
 
   constructor() {
     if (typeof window !== 'undefined' && !('AudioContext' in window || 'webkitAudioContext' in window)) {
@@ -99,6 +101,7 @@ class AudioManager {
 
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       this.isListening = true;
+      this.startRecording();
       return true;
     } catch (err: unknown) {
       const error = err as { name?: string };
@@ -110,6 +113,58 @@ class AudioManager {
       this.isListening = false;
       return false;
     }
+  }
+
+  public startRecording(): boolean {
+    if (!this.micStream || typeof MediaRecorder === 'undefined') return false;
+    this.recordedChunks = [];
+    try {
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : '';
+      this.mediaRecorder = mimeType
+        ? new MediaRecorder(this.micStream, { mimeType })
+        : new MediaRecorder(this.micStream);
+
+      this.mediaRecorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          this.recordedChunks.push(event.data);
+        }
+      };
+      this.mediaRecorder.start(100);
+      return true;
+    } catch (err) {
+      console.warn('MediaRecorder start failed:', err);
+      return false;
+    }
+  }
+
+  public async stopRecording(): Promise<Blob | null> {
+    return new Promise((resolve) => {
+      if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
+        if (this.recordedChunks.length > 0) {
+          const mime = this.recordedChunks[0]?.type || 'audio/webm';
+          resolve(new Blob(this.recordedChunks, { type: mime }));
+        } else {
+          resolve(null);
+        }
+        return;
+      }
+
+      this.mediaRecorder.onstop = () => {
+        const mime = this.recordedChunks[0]?.type || 'audio/webm';
+        const blob = new Blob(this.recordedChunks, { type: mime });
+        resolve(blob);
+      };
+
+      try {
+        this.mediaRecorder.stop();
+      } catch {
+        resolve(null);
+      }
+    });
   }
 
   public stopMicrophone(): void {

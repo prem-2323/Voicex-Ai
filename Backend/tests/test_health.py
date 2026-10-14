@@ -15,7 +15,8 @@ def test_health_endpoint():
     response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ok"
+    assert data.get("success") is True
+    assert data["status"] in ("ok", "running")
     assert data["service"] == "VoiceX AI Backend"
 
 

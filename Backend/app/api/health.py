@@ -4,8 +4,9 @@ router = APIRouter(tags=["Health"])
 
 
 @router.get("/health")
-async def health_check():
+def health_check():
     return {
-        "status": "ok",
+        "success": True,
         "service": "VoiceX AI Backend",
+        "status": "running",
     }

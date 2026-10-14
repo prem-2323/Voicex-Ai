@@ -39,6 +39,7 @@ interface VoiceContextType {
   stopListeningAndProcess: () => Promise<void>;
   cancelTurn: () => void;
   sendTextMessage: (text: string) => Promise<void>;
+  uploadAndProcessAudio: (audioFile: File) => Promise<void>;
   replayAssistantMessage: (text: string) => void;
   createNewConversation: () => void;
   loadConversation: (id: string) => void;
@@ -435,11 +436,24 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setVoiceState('transcribing');
 
-    const promptText = liveTranscript.text.trim();
+    // Retrieve recorded audio blob from microphone
+    const recordedBlob = await audioManager.stopRecording();
+    audioManager.stopMicrophone();
 
-    // Begin pipeline
-    await executeInferencePipeline(promptText);
+    const fallbackText = liveTranscript.text.trim();
+    await executeInferencePipeline({
+      audioBlob: recordedBlob || undefined,
+      promptText: fallbackText || undefined,
+    });
   }, [liveTranscript.text]);
+
+  // Audio file upload submission
+  const uploadAndProcessAudio = useCallback(async (audioFile: File) => {
+    setPermissionError(null);
+    setVoiceState('transcribing');
+    setLiveTranscript({ text: `Transcribing ${audioFile.name}...`, isFinal: false });
+    await executeInferencePipeline({ audioBlob: audioFile });
+  }, []);
 
   // Direct text prompt submission
   const sendTextMessage = useCallback(async (text: string) => {
@@ -450,47 +464,78 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       language: /[\u0900-\u097F]/.test(text) ? 'Hindi' : 'English',
     });
     setVoiceState('thinking');
-    await executeInferencePipeline(text.trim());
+    await executeInferencePipeline({ promptText: text.trim() });
   }, []);
 
-  const executeInferencePipeline = async (userPrompt: string) => {
-    const isHindi = /[\u0900-\u097F]/.test(userPrompt) || settings.language === 'hi';
-    const detectedLang: 'English' | 'Hindi' = isHindi ? 'Hindi' : 'English';
+  const executeInferencePipeline = async (input: { audioBlob?: Blob; promptText?: string }) => {
+    const activeConv = conversations.find((c) => c.id === activeConvId) || conversations[0];
+    const historyPayload = (activeConv?.messages || []).slice(-10).map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
 
-    // Add user message to active conversation
-    const userMsg: ChatMessage = {
-      id: `msg-u-${Date.now()}`,
-      role: 'user',
-      content: userPrompt || (detectedLang === 'Hindi' ? "नमस्ते, VoiceX AI!" : "Hello VoiceX AI!"),
-      detectedLanguage: detectedLang,
-      timestamp: Date.now(),
-    };
+    // If text prompt was directly provided, add user turn immediately
+    if (input.promptText && !input.audioBlob) {
+      const isHindi = /[\u0900-\u097F]/.test(input.promptText) || settings.language === 'hi';
+      const detectedLang: 'English' | 'Hindi' = isHindi ? 'Hindi' : 'English';
+      const userMsg: ChatMessage = {
+        id: `msg-u-${Date.now()}`,
+        role: 'user',
+        content: input.promptText,
+        detectedLanguage: detectedLang,
+        timestamp: Date.now(),
+      };
 
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id === (activeConvId || prev[0]?.id)) {
-          const updatedMessages = [...c.messages, userMsg];
-          const newTitle = c.messages.length === 0 ? userMsg.content.slice(0, 32) : c.title;
-          return { ...c, messages: updatedMessages, title: newTitle, updatedAt: Date.now() };
-        }
-        return c;
-      })
-    );
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id === (activeConvId || prev[0]?.id)) {
+            const updatedMessages = [...c.messages, userMsg];
+            const newTitle = c.messages.length === 0 ? userMsg.content.slice(0, 32) : c.title;
+            return { ...c, messages: updatedMessages, title: newTitle, updatedAt: Date.now() };
+          }
+          return c;
+        })
+      );
+    }
 
-    setVoiceState('thinking');
+    setVoiceState(input.audioBlob ? 'transcribing' : 'thinking');
     setLiveStreamingText('');
+
+    let recordedUserMessageAdded = false;
 
     await voiceClient.processVoiceTurn(
       {
-        transcriptHint: userMsg.content,
+        audioBlob: input.audioBlob,
+        transcriptHint: input.promptText,
         preferredLang: settings.language,
         baseUrl: settings.apiBaseUrl,
         wsUrl: settings.wsUrl,
         forcePreviewMode: settings.forcePreviewMode,
+        history: historyPayload,
       },
       {
         onTranscript: (t, isFin, lang) => {
           setLiveTranscript({ text: t, isFinal: isFin, language: lang });
+          if (input.audioBlob && isFin && t.trim() && !recordedUserMessageAdded) {
+            recordedUserMessageAdded = true;
+            const userMsg: ChatMessage = {
+              id: `msg-u-${Date.now()}`,
+              role: 'user',
+              content: t.trim(),
+              detectedLanguage: lang || 'English',
+              timestamp: Date.now(),
+            };
+            setConversations((prev) =>
+              prev.map((c) => {
+                if (c.id === (activeConvId || prev[0]?.id)) {
+                  const updatedMessages = [...c.messages, userMsg];
+                  const newTitle = c.messages.length === 0 ? userMsg.content.slice(0, 32) : c.title;
+                  return { ...c, messages: updatedMessages, title: newTitle, updatedAt: Date.now() };
+                }
+                return c;
+              })
+            );
+          }
         },
         onToken: (_tok, accumulated) => {
           setVoiceState('speaking');
@@ -501,6 +546,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         },
         onError: (err) => {
           setPermissionError(err);
+          setVoiceState('idle');
         },
         onComplete: (assistantMsg) => {
           setConversations((prev) =>
@@ -561,6 +607,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stopListeningAndProcess,
         cancelTurn,
         sendTextMessage,
+        uploadAndProcessAudio,
         replayAssistantMessage,
         createNewConversation,
         loadConversation,
