@@ -159,17 +159,28 @@ class VoiceClient {
         // Phase 2: Real Speech-to-Text via Faster-Whisper if audioBlob is provided
         if (input.audioBlob && input.audioBlob.size > 0) {
           handlers.onTranscript?.('Transcribing audio with Faster-Whisper...', false, detectedLang);
-          const { transcribeAudio } = await import('./api');
-          const sttResult = await transcribeAudio(input.audioBlob);
-          transcriptText = (sttResult.text || '').trim();
-          sttDurationMs = sttResult.processing_time_ms || 0;
-          const isHi = (sttResult.language && sttResult.language.toLowerCase().startsWith('hi')) || /[\u0900-\u097F]/.test(transcriptText);
-          detectedLang = isHi ? 'Hindi' : 'English';
-          handlers.onTranscript?.(transcriptText, true, detectedLang);
+          try {
+            const { transcribeAudio } = await import('./api');
+            const sttResult = await transcribeAudio(input.audioBlob);
+            transcriptText = (sttResult.text || '').trim();
+            sttDurationMs = sttResult.processing_time_ms || 0;
+            const isHi = (sttResult.language && sttResult.language.toLowerCase().startsWith('hi')) || /[\u0900-\u097F]/.test(transcriptText);
+            detectedLang = isHi ? 'Hindi' : 'English';
+            handlers.onTranscript?.(transcriptText, true, detectedLang);
+          } catch (sttErr: any) {
+            console.warn('STT transcription error:', sttErr);
+            if (input.transcriptHint && input.transcriptHint.trim()) {
+              transcriptText = input.transcriptHint.trim();
+            } else {
+              handlers.onError?.('No clear speech detected. Please speak into the microphone and try again.');
+              this.isProcessing = false;
+              return;
+            }
+          }
         }
 
         if (!transcriptText) {
-          handlers.onError?.('No speech detected or empty audio file.');
+          handlers.onError?.('No speech detected or audio was too brief.');
           this.isProcessing = false;
           return;
         }

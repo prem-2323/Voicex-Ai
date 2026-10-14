@@ -9,11 +9,48 @@ export interface AudioDevice {
   kind: 'audioinput' | 'audiooutput';
 }
 
+function encodeWav(samples: Float32Array, sampleRate = 16000): Blob {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+
+  function writeString(offset: number, str: string) {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // Mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+
+  return new Blob([view], { type: 'audio/wav' });
+}
+
 class AudioManager {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private micStream: MediaStream | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private processorNode: ScriptProcessorNode | null = null;
+  private silentGainNode: GainNode | null = null;
+  private pcmBuffers: Float32Array[] = [];
+  private pcmSampleCount: number = 0;
   private isListening: boolean = false;
   private isSpeaking: boolean = false;
   private dataArray: Uint8Array | null = null;
@@ -101,6 +138,40 @@ class AudioManager {
       this.sourceNode = this.audioContext.createMediaStreamSource(this.micStream);
       this.sourceNode.connect(this.analyser);
 
+      // Setup high-fidelity 16kHz PCM audio capture
+      try {
+        const bufferSize = 4096;
+        this.processorNode = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
+        this.silentGainNode = this.audioContext.createGain();
+        this.silentGainNode.gain.value = 0;
+
+        const targetRate = 16000;
+        this.processorNode.onaudioprocess = (e: AudioProcessingEvent) => {
+          if (!this.isListening) return;
+          const inputData = e.inputBuffer.getChannelData(0);
+          const currentRate = this.audioContext?.sampleRate || 48000;
+          if (currentRate === targetRate) {
+            this.pcmBuffers.push(new Float32Array(inputData));
+            this.pcmSampleCount += inputData.length;
+          } else {
+            const step = currentRate / targetRate;
+            const newLen = Math.floor(inputData.length / step);
+            const downsampled = new Float32Array(newLen);
+            for (let i = 0; i < newLen; i++) {
+              downsampled[i] = inputData[Math.floor(i * step)];
+            }
+            this.pcmBuffers.push(downsampled);
+            this.pcmSampleCount += downsampled.length;
+          }
+        };
+
+        this.sourceNode.connect(this.processorNode);
+        this.processorNode.connect(this.silentGainNode);
+        this.silentGainNode.connect(this.audioContext.destination);
+      } catch (procErr) {
+        console.warn('ScriptProcessor setup skipped, falling back to MediaRecorder:', procErr);
+      }
+
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       this.isListening = true;
       this.startRecording();
@@ -118,37 +189,58 @@ class AudioManager {
   }
 
   public startRecording(): boolean {
-    if (!this.micStream || typeof MediaRecorder === 'undefined') return false;
+    this.pcmBuffers = [];
+    this.pcmSampleCount = 0;
     this.recordedChunks = [];
-    try {
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : '';
-      this.mediaRecorder = mimeType
-        ? new MediaRecorder(this.micStream, { mimeType })
-        : new MediaRecorder(this.micStream);
 
-      this.mediaRecorder.ondataavailable = (event: BlobEvent) => {
-        if (event.data && event.data.size > 0) {
-          this.recordedChunks.push(event.data);
-        }
-      };
-      this.mediaRecorder.start(100);
-      return true;
-    } catch (err) {
-      console.warn('MediaRecorder start failed:', err);
-      return false;
+    if (!this.micStream) return false;
+
+    if (typeof MediaRecorder !== 'undefined') {
+      try {
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : '';
+        this.mediaRecorder = mimeType
+          ? new MediaRecorder(this.micStream, { mimeType })
+          : new MediaRecorder(this.micStream);
+
+        this.mediaRecorder.ondataavailable = (event: BlobEvent) => {
+          if (event.data && event.data.size > 0) {
+            this.recordedChunks.push(event.data);
+          }
+        };
+        // Record continuously without timeslice to prevent broken WebM container headers
+        this.mediaRecorder.start();
+      } catch (err) {
+        console.warn('MediaRecorder start failed:', err);
+      }
     }
+    return true;
   }
 
   public async stopRecording(): Promise<Blob | null> {
+    // 1. Primary path: Pristine 16kHz mono PCM WAV (Fastest & 100% reliable with Faster-Whisper)
+    if (this.pcmSampleCount >= 3200) {
+      const merged = new Float32Array(this.pcmSampleCount);
+      let offset = 0;
+      for (const buf of this.pcmBuffers) {
+        merged.set(buf, offset);
+        offset += buf.length;
+      }
+      this.pcmBuffers = [];
+      this.pcmSampleCount = 0;
+      return encodeWav(merged, 16000);
+    }
+
+    // 2. Fallback path: MediaRecorder blob
     return new Promise((resolve) => {
       if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
         if (this.recordedChunks.length > 0) {
           const mime = this.recordedChunks[0]?.type || 'audio/webm';
-          resolve(new Blob(this.recordedChunks, { type: mime }));
+          const blob = new Blob(this.recordedChunks, { type: mime });
+          resolve(blob.size >= 2000 ? blob : null);
         } else {
           resolve(null);
         }
@@ -158,10 +250,13 @@ class AudioManager {
       this.mediaRecorder.onstop = () => {
         const mime = this.recordedChunks[0]?.type || 'audio/webm';
         const blob = new Blob(this.recordedChunks, { type: mime });
-        resolve(blob);
+        resolve(blob.size >= 2000 ? blob : null);
       };
 
       try {
+        if (this.mediaRecorder.state === 'recording') {
+          this.mediaRecorder.requestData();
+        }
         this.mediaRecorder.stop();
       } catch {
         resolve(null);
@@ -173,6 +268,22 @@ class AudioManager {
     if (this.micStream) {
       this.micStream.getTracks().forEach((track) => track.stop());
       this.micStream = null;
+    }
+    if (this.processorNode) {
+      try {
+        this.processorNode.disconnect();
+      } catch {
+        // ignore
+      }
+      this.processorNode = null;
+    }
+    if (this.silentGainNode) {
+      try {
+        this.silentGainNode.disconnect();
+      } catch {
+        // ignore
+      }
+      this.silentGainNode = null;
     }
     if (this.sourceNode) {
       try {

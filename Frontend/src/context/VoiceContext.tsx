@@ -463,6 +463,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     audioManager.stopMicrophone();
 
     const fallbackText = liveTranscript.text.trim();
+    if (!recordedBlob && !fallbackText) {
+      setVoiceState('idle');
+      return;
+    }
+
     await executeInferencePipeline({
       audioBlob: recordedBlob || undefined,
       promptText: fallbackText || undefined,
