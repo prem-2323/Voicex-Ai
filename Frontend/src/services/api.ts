@@ -46,14 +46,19 @@ export async function transcribeAudio(audioFile: File | Blob) {
 
 export async function sendChatMessage(
   message: string,
-  history: Array<{ role: "user" | "assistant"; content: string }> = []
+  history: Array<{ role: "user" | "assistant"; content: string }> = [],
+  sessionId?: string
 ) {
+  const body: Record<string, unknown> = { message, history };
+  if (sessionId) {
+    body.session_id = sessionId;
+  }
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify(body),
   });
 
   const data = await response.json();

@@ -28,12 +28,12 @@ async def generate_response(message: str, history: list[dict] | None = None) -> 
     base_url, model, timeout_seconds = get_ollama_config()
 
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for item in history or []:
+    for item in (history or [])[-20:]:
         role = item.get("role")
         content = str(item.get("content", "")).strip()
         if role in ("user", "assistant") and content:
-            messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": message.strip()})
+            messages.append({"role": role, "content": content[:5000]})
+    messages.append({"role": "user", "content": message.strip()[:5000]})
 
     started = time.perf_counter()
     try:
@@ -48,14 +48,16 @@ async def generate_response(message: str, history: list[dict] | None = None) -> 
                     "options": {"temperature": 0.7},
                 },
             )
-    except httpx.ConnectError as exc:
-        raise RuntimeError(
-            f"Cannot reach Ollama at {base_url}. Is Ollama running? ({exc})"
-        )
     except httpx.TimeoutException:
         raise RuntimeError(
             f"Ollama request timed out after {timeout_seconds:g}s"
         )
+    except httpx.ConnectError as exc:
+        raise RuntimeError(
+            f"Cannot connect to Ollama at {base_url}. Is Ollama running? ({exc})"
+        )
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Cannot connect to Ollama at {base_url}: {exc}")
 
     if response.status_code == 404:
         raise RuntimeError(

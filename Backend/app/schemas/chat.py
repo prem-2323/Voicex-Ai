@@ -22,6 +22,9 @@ class ChatRequest(BaseModel):
         default_factory=list,
         max_length=20,
     )
+    session_id: str | None = Field(
+        default=None, min_length=1, max_length=64
+    )
 
     @field_validator("message")
     @classmethod
@@ -38,3 +41,5 @@ class ChatResponse(BaseModel):
     model: str
     processing_time_ms: float
     done: bool = True
+    session_id: str | None = None
+    history_length: int = 0
