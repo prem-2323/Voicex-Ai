@@ -50,7 +50,16 @@ async def transcribe(file: UploadFile = File(...)):
             temp_path = tmp.name
 
         result = await run_in_threadpool(transcribe_audio, temp_path)
-        return {"success": True, "transcription": result}
+        return {
+            "success": True,
+            "text": result["text"],
+            "language": result["language"],
+            "language_probability": result.get("language_probability"),
+            "duration_seconds": result.get("duration_seconds"),
+            "processing_time_ms": result.get("processing_time_ms"),
+            "segments": result.get("segments", []),
+            "transcription": result,
+        }
     except HTTPException:
         raise
     except RuntimeError as exc:
