@@ -1,12 +1,9 @@
-"""Edge-TTS speech synthesis service.
-
-Edge-TTS uses the online Microsoft speech service, so an internet
-connection is required. It is not a fully offline engine.
-"""
+"""Speech synthesis service supporting local Piper TTS and Edge-TTS fallback."""
 
 import asyncio
 import logging
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -14,6 +11,7 @@ from pathlib import Path
 import edge_tts
 
 from app.core.config import get_settings
+from app.services.piper_tts import synthesize_piper_to_file
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +23,8 @@ ALLOWED_VOICES = frozenset(
         "en-IN-PrabhatNeural",
         "hi-IN-SwaraNeural",
         "hi-IN-MadhurNeural",
+        "en_US-lessac-medium",
+        "hi_IN-pratham-medium",
     }
 )
 
@@ -33,14 +33,18 @@ VOICE_ALIASES = {
     "voice-neel": "en-IN-PrabhatNeural",
     "voice-priya": "hi-IN-SwaraNeural",
     "voice-echo": "en-US-GuyNeural",
+    "en": "en_US-lessac-medium",
+    "hi": "hi_IN-pratham-medium",
 }
 
 DEFAULT_VOICE = "en-US-AriaNeural"
 MAX_TEXT_LENGTH = 3000
 
 
-def resolve_voice(voice: str) -> str:
+def resolve_voice(voice: str, text: str | None = None) -> str:
     """Resolve legacy frontend voice IDs to their neural equivalents."""
+    if text and re.search(r"[\u0900-\u097F]", text):
+        return "hi-IN-SwaraNeural"
     return VOICE_ALIASES.get(voice, voice)
 
 
@@ -70,27 +74,26 @@ def purge_stale_files(max_age_seconds: int | None = None) -> int:
         now = time.time()
         removed = 0
         audio_dir = get_audio_dir()
-        for path in audio_dir.glob("*.mp3"):
-            try:
-                if now - path.stat().st_mtime > limit:
-                    path.unlink(missing_ok=True)
-                    removed += 1
-            except OSError:
-                continue
+        for ext in ("*.mp3", "*.wav"):
+            for path in audio_dir.glob(ext):
+                try:
+                    if now - path.stat().st_mtime > limit:
+                        path.unlink(missing_ok=True)
+                        removed += 1
+                except OSError:
+                    continue
         return removed
     except Exception:
         return 0
 
 
-async def synthesize_to_file(text: str, voice: str) -> Path:
-    """Synthesize text and return the path of the generated MP3.
-
-    Raises RuntimeError with a user-friendly message on failure.
-    """
+async def synthesize_edge_to_file(text: str, voice: str) -> Path:
+    """Synthesize text using Edge-TTS and return the path of the generated MP3."""
     cleaned = text.strip()
     if not cleaned:
         raise RuntimeError("Text cannot be blank.")
-    if voice not in ALLOWED_VOICES:
+    resolved_voice = resolve_voice(voice, text=cleaned)
+    if resolved_voice not in ALLOWED_VOICES:
         raise RuntimeError(f"Unsupported voice '{voice}'.")
     if len(cleaned) > MAX_TEXT_LENGTH:
         raise RuntimeError(
@@ -101,7 +104,7 @@ async def synthesize_to_file(text: str, voice: str) -> Path:
     audio_dir = get_audio_dir()
     filepath = audio_dir / f"{uuid.uuid4().hex}.mp3"
     try:
-        communicate = edge_tts.Communicate(cleaned, voice)
+        communicate = edge_tts.Communicate(cleaned, resolved_voice)
         await asyncio.wait_for(
             communicate.save(str(filepath)),
             timeout=float(settings.tts_timeout_seconds),
@@ -136,6 +139,30 @@ async def synthesize_to_file(text: str, voice: str) -> Path:
                 pass
         raise RuntimeError("TTS service returned empty audio.")
     return filepath
+
+
+async def synthesize_to_file(text: str, voice: str) -> Path:
+    """Synthesize text and return the path of the generated audio file."""
+    settings = get_settings()
+    provider = (getattr(settings, "tts_provider", "piper") or "piper").lower()
+    fallback = (getattr(settings, "tts_fallback_provider", "none") or "none").lower()
+
+    if provider == "piper":
+        try:
+            from starlette.concurrency import run_in_threadpool
+
+            if callable(synthesize_piper_to_file):
+                import inspect
+                if inspect.iscoroutinefunction(synthesize_piper_to_file):
+                    return await synthesize_piper_to_file(text, voice)
+            return await run_in_threadpool(synthesize_piper_to_file, text, voice)
+        except Exception as exc:
+            if fallback == "edge":
+                logger.warning("Piper TTS failed (%s); falling back to Edge-TTS", exc)
+                return await synthesize_edge_to_file(text, voice)
+            raise
+
+    return await synthesize_edge_to_file(text, voice)
 
 
 def delete_file_quietly(path: str | os.PathLike) -> None:

@@ -7,6 +7,8 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+import re
+
 SYSTEM_PROMPT = """You are VoiceX AI, a helpful multilingual voice assistant.
 Rules:
 - Answer clearly and naturally.
@@ -14,6 +16,20 @@ Rules:
 - Reply in the user's language when reasonably identifiable.
 - Do not claim to have performed actions you did not perform.
 - If you are uncertain, say so."""
+
+HINDI_PROMPT_DIRECTIVE = "You must reply in Hindi using the Devanagari script."
+
+
+def build_system_prompt(language: str = "auto", message: str = "") -> str:
+    lang = (language or "auto").strip().lower()
+    has_devanagari = bool(re.search(r"[\u0900-\u097F]", message or ""))
+    if lang in ("hi", "hindi") or (lang == "auto" and has_devanagari):
+        return (
+            f"{SYSTEM_PROMPT}\n"
+            f"- {HINDI_PROMPT_DIRECTIVE}\n"
+            "- Always use proper Devanagari script for Hindi responses."
+        )
+    return SYSTEM_PROMPT
 
 
 def get_ollama_config():
@@ -24,10 +40,15 @@ def get_ollama_config():
     return base_url, model, timeout_seconds
 
 
-async def generate_response(message: str, history: list[dict] | None = None) -> dict:
+async def generate_response(
+    message: str,
+    history: list[dict] | None = None,
+    language: str | None = None,
+) -> dict:
     base_url, model, timeout_seconds = get_ollama_config()
+    system_prompt = build_system_prompt(language=language or "auto", message=message)
 
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
     for item in (history or [])[-20:]:
         role = item.get("role")
         content = str(item.get("content", "")).strip()

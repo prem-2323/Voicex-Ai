@@ -61,6 +61,7 @@ class AudioManager {
   private micStream: MediaStream | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
+  private muteGain: GainNode | null = null;
   private workletUrl: string | null = null;
   private pcmBuffers: Float32Array[] = [];
   private pcmSampleCount: number = 0;
@@ -183,6 +184,10 @@ class AudioManager {
           };
 
           this.sourceNode.connect(this.workletNode);
+          this.muteGain = this.audioContext.createGain();
+          this.muteGain.gain.value = 0;
+          this.workletNode.connect(this.muteGain);
+          this.muteGain.connect(this.audioContext.destination);
         } catch (procErr) {
           console.warn('AudioWorklet setup skipped, falling back to MediaRecorder:', procErr);
         }
@@ -292,6 +297,14 @@ class AudioManager {
         // ignore
       }
       this.workletNode = null;
+    }
+    if (this.muteGain) {
+      try {
+        this.muteGain.disconnect();
+      } catch {
+        // ignore
+      }
+      this.muteGain = null;
     }
     if (this.sourceNode) {
       try {

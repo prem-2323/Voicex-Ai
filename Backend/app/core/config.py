@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     tts_audio_dir: str = "generated_audio"
     tts_timeout_seconds: float = 60.0
     tts_retention_seconds: int = 3600
+    tts_provider: str = "piper"
+    tts_fallback_provider: str = "none"
+    piper_models_dir: str = "models/piper"
+    piper_hindi_model: str = "hi_IN-pratham-medium"
+    piper_english_model: str = "en_US-lessac-medium"
+    piper_use_cuda: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -3,7 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.services.stt import transcribe_audio
@@ -18,7 +18,10 @@ ALLOWED_EXTENSIONS = {
 
 
 @router.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe(
+    file: UploadFile = File(...),
+    language: str | None = Form(None),
+):
     filename = file.filename or ""
     extension = Path(filename).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
@@ -49,7 +52,10 @@ async def transcribe(file: UploadFile = File(...)):
             tmp.write(contents)
             temp_path = tmp.name
 
-        result = await run_in_threadpool(transcribe_audio, temp_path)
+        if language:
+            result = await run_in_threadpool(transcribe_audio, temp_path, language=language)
+        else:
+            result = await run_in_threadpool(transcribe_audio, temp_path)
         return {
             "success": True,
             "text": result["text"],

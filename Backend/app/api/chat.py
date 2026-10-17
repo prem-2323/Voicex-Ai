@@ -18,6 +18,7 @@ async def chat(request: ChatRequest):
         result = await generate_response(
             message=request.message,
             history=combined,
+            language=request.language,
         )
         stored: list[dict] = combined
         if request.session_id:
