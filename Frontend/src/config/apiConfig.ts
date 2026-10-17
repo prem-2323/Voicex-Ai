@@ -5,8 +5,8 @@
 
 import { AppSettings, VoiceOption, PerformanceMetrics } from '../types/voice';
 
-export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000';
-export const DEFAULT_WS_URL = 'ws://127.0.0.1:8000/ws/voice';
+export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
+export const DEFAULT_WS_URL = 'ws://127.0.0.1:8001/ws/voice';
 
 export const AVAILABLE_VOICES: VoiceOption[] = [
   {
@@ -72,7 +72,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   speechRate: 1.0,
   selectedMicId: 'default',
   selectedSpeakerId: 'default',
-  autoListen: false,
+  autoListen: true,
   bargeInEnabled: true,
   vadSensitivity: 75,
   apiBaseUrl: DEFAULT_API_BASE_URL,

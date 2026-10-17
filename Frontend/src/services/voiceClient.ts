@@ -187,7 +187,8 @@ class VoiceClient {
 
         // Phase 3: Real Local LLM via Ollama + Qwen 2.5 3B
         const { sendChatMessage } = await import('./api');
-        const chatResult = await sendChatMessage(transcriptText, input.history || [], input.sessionId);
+        const langParam = input.preferredLang === 'hi' ? 'hi' : input.preferredLang === 'en' ? 'en' : 'auto';
+        const chatResult = await sendChatMessage(transcriptText, input.history || [], input.sessionId, langParam);
         const answerText = chatResult.response;
         const llmDurationMs = chatResult.processing_time_ms || 0;
         const totalDurationMs = Math.round(sttDurationMs + llmDurationMs);

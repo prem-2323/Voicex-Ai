@@ -135,9 +135,20 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
         const voiceId = legacyMap[parsed.selectedVoiceId] || parsed.selectedVoiceId;
         const isValid = AVAILABLE_VOICES.some((v) => v.id === voiceId);
+        let apiBaseUrl = parsed.apiBaseUrl || DEFAULT_SETTINGS.apiBaseUrl;
+        if (typeof apiBaseUrl === 'string' && apiBaseUrl.includes(':8000')) {
+          apiBaseUrl = apiBaseUrl.replace(':8000', ':8001');
+        }
+        let wsUrl = parsed.wsUrl || DEFAULT_SETTINGS.wsUrl;
+        if (typeof wsUrl === 'string' && wsUrl.includes(':8000')) {
+          wsUrl = wsUrl.replace(':8000', ':8001');
+        }
         return {
           ...DEFAULT_SETTINGS,
           ...parsed,
+          apiBaseUrl,
+          wsUrl,
+          autoListen: true,
           selectedVoiceId: isValid ? voiceId : DEFAULT_SETTINGS.selectedVoiceId,
         };
       }
@@ -182,6 +193,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const animFrameRef = useRef<number | null>(null);
   const speechRecognitionRef = useRef<unknown>(null);
+  const startListeningRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const stopListeningRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const settingsRef = useRef(settings);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   // Sync settings & conversations to localStorage
   useEffect(() => {
@@ -294,6 +312,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const cancelTurn = useCallback(() => {
+    audioManager.stopSilenceDetector();
     voiceClient.cancelActiveResponse();
     audioManager.stopSpeaking();
     setVoiceState('idle');
@@ -406,7 +425,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, [isMuted, settings.apiBaseUrl, settings.speechRate]);
 
-  // Start listening (Microphone)
+  // Start listening (Microphone) with automatic silence detection (VAD)
   const startListening = useCallback(async () => {
     setPermissionError(null);
     audioManager.stopSpeaking();
@@ -423,6 +442,17 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsMicAllowed(true);
     setVoiceState('listening');
 
+    // Automatically detect when user finishes speaking and process answer hands-free
+    audioManager.startSilenceDetector({
+      silenceTimeoutMs: 1100,
+      speechThreshold: 0.04,
+      silenceThreshold: 0.025,
+      onSilenceDetected: () => {
+        console.log('[VoiceContext] Speech finished! Auto-transcribing and replying...');
+        stopListeningRef.current();
+      },
+    });
+
     // Optional browser SpeechRecognition integration for live transcript text preview
     const SpeechRec = (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).SpeechRecognition ||
                       (window as unknown as { webkitSpeechRecognition?: any }).webkitSpeechRecognition;
@@ -434,7 +464,12 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         recognition.interimResults = true;
         recognition.lang = settings.language === 'hi' ? 'hi-IN' : 'en-US';
 
+        recognition.onspeechstart = () => {
+          audioManager.markSpeechDetectedManually();
+        };
+
         recognition.onresult = (event: any) => {
+          audioManager.markSpeechDetectedManually();
           let interimTranscript = '';
           for (let i = event.resultIndex; i < event.results.length; ++i) {
             interimTranscript += event.results[i][0].transcript;
@@ -447,6 +482,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               language: isHindi ? 'Hindi' : 'English',
             });
           }
+        };
+
+        recognition.onspeechend = () => {
+          // Native browser VAD detected end of speech!
+          audioManager.notifySpeechEndCandidate(800);
         };
 
         recognition.onerror = () => {
@@ -463,6 +503,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Stop listening and run inference turn
   const stopListeningAndProcess = useCallback(async () => {
+    audioManager.stopSilenceDetector();
+
     if (speechRecognitionRef.current) {
       try {
         (speechRecognitionRef.current as any).stop();
@@ -489,6 +531,14 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       promptText: fallbackText || undefined,
     });
   }, [liveTranscript.text]);
+
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
+
+  useEffect(() => {
+    stopListeningRef.current = stopListeningAndProcess;
+  }, [stopListeningAndProcess]);
 
   // Audio file upload submission
   const uploadAndProcessAudio = useCallback(async (audioFile: File) => {
@@ -617,17 +667,29 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               rate: settings.speechRate,
               onEnd: () => {
                 setVoiceState('idle');
-                if (settings.autoListen) {
-                  // Continuous conversation mode: start listening again
-                  setTimeout(() => startListening(), 400);
+                if (settingsRef.current.autoListen) {
+                  // Continuous conversational loop: automatically start listening for follow-up question
+                  setTimeout(() => {
+                    startListeningRef.current();
+                  }, 500);
                 }
               },
               onError: () => {
                 setVoiceState('idle');
+                if (settingsRef.current.autoListen) {
+                  setTimeout(() => {
+                    startListeningRef.current();
+                  }, 800);
+                }
               },
             });
           } else {
             setVoiceState('idle');
+            if (settingsRef.current.autoListen) {
+              setTimeout(() => {
+                startListeningRef.current();
+              }, 500);
+            }
           }
         },
       }

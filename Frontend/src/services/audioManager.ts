@@ -73,6 +73,13 @@ class AudioManager {
   private backendAudioUrl: string | null = null;
   private onBargeInCallback: (() => void) | null = null;
   private vadInterval: number | null = null;
+  private silenceInterval: number | null = null;
+  private hasDetectedSpeechInTurn: boolean = false;
+  private silenceStartTimestamp: number | null = null;
+  private consecutiveSpeechFrames: number = 0;
+  private timeDomainArray: Float32Array | null = null;
+  private speechEndTimer: number | null = null;
+  private silenceCallback: (() => void) | null = null;
   private permissionState: 'prompt' | 'granted' | 'denied' | 'unsupported' = 'prompt';
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
@@ -314,6 +321,7 @@ class AudioManager {
       }
       this.sourceNode = null;
     }
+    this.stopSilenceDetector();
     this.isListening = false;
   }
 
@@ -336,14 +344,22 @@ class AudioManager {
    * Returns normalized audio energy level (0.0 to 1.0)
    */
   public getVolumeLevel(): number {
-    if (!this.isListening || !this.analyser || !this.dataArray) return 0;
-    (this.analyser as any).getByteFrequencyData(this.dataArray);
-    let sum = 0;
-    for (let i = 0; i < this.dataArray.length; i++) {
-      sum += this.dataArray[i];
+    if (!this.isListening || !this.analyser) return 0;
+    
+    // High-precision Time-Domain RMS calculation
+    if (!this.timeDomainArray || this.timeDomainArray.length !== this.analyser.fftSize) {
+      this.timeDomainArray = new Float32Array(this.analyser.fftSize);
     }
-    const avg = sum / this.dataArray.length;
-    return Math.min(1, avg / 128);
+    this.analyser.getFloatTimeDomainData(this.timeDomainArray);
+    
+    let sumSquares = 0;
+    for (let i = 0; i < this.timeDomainArray.length; i++) {
+      const sample = this.timeDomainArray[i];
+      sumSquares += sample * sample;
+    }
+    const rms = Math.sqrt(sumSquares / this.timeDomainArray.length);
+    // Maps human speech range (0.012 to 0.25) to a clean 0.0 - 1.0 volume scale
+    return Math.min(1, Math.max(0, rms * 4.5));
   }
 
   /**
@@ -578,6 +594,121 @@ class AudioManager {
       clearInterval(this.vadInterval);
       this.vadInterval = null;
     }
+  }
+
+  public startSilenceDetector(options: {
+    speechThreshold?: number;
+    silenceThreshold?: number;
+    silenceTimeoutMs?: number;
+    initialSilenceTimeoutMs?: number;
+    onSpeechStart?: () => void;
+    onSilenceDetected?: () => void;
+    onInitialSilenceTimeout?: () => void;
+  } = {}): void {
+    this.stopSilenceDetector();
+
+    this.silenceCallback = options.onSilenceDetected || null;
+    const speechThreshold = options.speechThreshold ?? 0.04;
+    const silenceThreshold = options.silenceThreshold ?? 0.025;
+    const silenceTimeoutMs = options.silenceTimeoutMs ?? 1100;
+    const initialSilenceTimeoutMs = options.initialSilenceTimeoutMs ?? 30000;
+
+    this.hasDetectedSpeechInTurn = false;
+    this.silenceStartTimestamp = null;
+    this.consecutiveSpeechFrames = 0;
+    const startListeningTime = Date.now();
+
+    this.silenceInterval = window.setInterval(() => {
+      if (!this.isListening) {
+        this.stopSilenceDetector();
+        return;
+      }
+
+      const vol = this.getVolumeLevel();
+
+      // Phase 1: Wait for user to begin speaking
+      if (!this.hasDetectedSpeechInTurn) {
+        if (vol >= speechThreshold) {
+          this.consecutiveSpeechFrames++;
+          if (this.consecutiveSpeechFrames >= 2) {
+            this.hasDetectedSpeechInTurn = true;
+            this.silenceStartTimestamp = null;
+            options.onSpeechStart?.();
+          }
+        } else {
+          this.consecutiveSpeechFrames = Math.max(0, this.consecutiveSpeechFrames - 1);
+          if (Date.now() - startListeningTime > initialSilenceTimeoutMs) {
+            this.stopSilenceDetector();
+            options.onInitialSilenceTimeout?.();
+          }
+        }
+        return;
+      }
+
+      // Phase 2: Speech in progress, monitor for trailing silence to auto-finish turn
+      if (vol >= speechThreshold) {
+        // Continuous voice -> reset silence timer and cancel any candidate timer
+        this.silenceStartTimestamp = null;
+        if (this.speechEndTimer) {
+          clearTimeout(this.speechEndTimer);
+          this.speechEndTimer = null;
+        }
+      } else if (vol <= silenceThreshold) {
+        // Volume dropped to ambient silence
+        if (this.silenceStartTimestamp === null) {
+          this.silenceStartTimestamp = Date.now();
+        } else if (Date.now() - this.silenceStartTimestamp >= silenceTimeoutMs) {
+          // Automatic end of turn triggered by silence
+          const cb = this.silenceCallback;
+          this.stopSilenceDetector();
+          cb?.();
+        }
+      }
+    }, 70);
+  }
+
+  /**
+   * Called by speech recognition when words or speech events are detected
+   */
+  public markSpeechDetectedManually(): void {
+    this.hasDetectedSpeechInTurn = true;
+    this.silenceStartTimestamp = null;
+    if (this.speechEndTimer) {
+      clearTimeout(this.speechEndTimer);
+      this.speechEndTimer = null;
+    }
+  }
+
+  /**
+   * Called when browser's native SpeechRecognition fires onspeechend
+   */
+  public notifySpeechEndCandidate(delayMs = 800): void {
+    if (!this.hasDetectedSpeechInTurn || !this.isListening) return;
+    if (this.speechEndTimer) {
+      clearTimeout(this.speechEndTimer);
+    }
+    this.speechEndTimer = window.setTimeout(() => {
+      if (this.isListening && this.hasDetectedSpeechInTurn) {
+        const cb = this.silenceCallback;
+        this.stopSilenceDetector();
+        cb?.();
+      }
+    }, delayMs);
+  }
+
+  public stopSilenceDetector(): void {
+    if (this.silenceInterval) {
+      clearInterval(this.silenceInterval);
+      this.silenceInterval = null;
+    }
+    if (this.speechEndTimer) {
+      clearTimeout(this.speechEndTimer);
+      this.speechEndTimer = null;
+    }
+    this.silenceStartTimestamp = null;
+    this.consecutiveSpeechFrames = 0;
+    this.hasDetectedSpeechInTurn = false;
+    this.silenceCallback = null;
   }
 }
 

@@ -128,9 +128,15 @@ export const WorkspaceView: React.FC = () => {
             </select>
             <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
-          <span className="text-[11px] text-[#94A3B8] font-mono tabular-nums bg-[#141C2B] px-2 py-1 rounded">
-            {activeConversation?.id.slice(-6).toUpperCase()}
-          </span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.2)]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Continuous Auto Mode</span>
+            </div>
+            <span className="text-[11px] text-[#94A3B8] font-mono tabular-nums bg-[#141C2B] px-2 py-1 rounded">
+              {activeConversation?.id.slice(-6).toUpperCase()}
+            </span>
+          </div>
         </div>
 
         <div className="w-full max-w-xl flex flex-col items-center">
@@ -210,19 +216,29 @@ export const WorkspaceView: React.FC = () => {
               </button>
             </div>
 
-            {/* Keyboard shortcut hint */}
-            <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-[#94A3B8]">
-              <kbd className="px-1 py-0.2 rounded bg-[#141C2B] border border-[#273247] font-mono text-[10px] text-[#F1F5F9]">
-                Space
-              </kbd>
-              <span>or</span>
-              <kbd className="px-1 py-0.2 rounded bg-[#141C2B] border border-[#273247] font-mono text-[10px] text-[#F1F5F9]">
-                M
-              </kbd>
-              <span>to speak</span>
-              <span className="text-[#475569]">·</span>
-              <span>Upload audio</span>
-            </div>
+            {/* Listening status / Dynamic state hint */}
+            {voiceState === 'listening' ? (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-[#22D3EE] font-medium">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22D3EE] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#22D3EE]"></span>
+                </span>
+                <span>Listening... speak freely (auto-replies when you finish)</span>
+              </div>
+            ) : voiceState === 'speaking' ? (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-violet-300 font-medium">
+                <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
+                <span>Assistant replying... auto-listening resumes next</span>
+              </div>
+            ) : voiceState === 'thinking' || voiceState === 'transcribing' ? (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-300 font-medium animate-pulse">
+                <span>{voiceState === 'transcribing' ? 'Transcribing your audio...' : 'Generating AI response...'}</span>
+              </div>
+            ) : (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-[#94A3B8]">
+                <span>Click mic once to start automated hands-free conversation</span>
+              </div>
+            )}
           </div>
 
           {/* 4. Compact Conversation Turn Panel */}

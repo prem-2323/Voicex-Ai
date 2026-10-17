@@ -9,26 +9,55 @@ logger = logging.getLogger(__name__)
 
 import re
 
-SYSTEM_PROMPT = """You are VoiceX AI, a helpful multilingual voice assistant.
-Rules:
-- Answer clearly and naturally.
-- Prefer concise answers suitable for spoken conversation.
-- Reply in the user's language when reasonably identifiable.
-- Do not claim to have performed actions you did not perform.
-- If you are uncertain, say so."""
+SYSTEM_PROMPT = """You are VoiceX AI, a fast, helpful multilingual voice assistant.
+Rules for Spoken Voice Responses:
+- Answer naturally, clearly, and conversationally.
+- Keep answers concise (1 to 3 sentences) suitable for real-time speech.
+- Do NOT use markdown tables, asterisks, bullet points, or URLs.
+- CONVERSATIONAL MEMORY: Remember previous conversation turns and answer follow-ups in context.
+- LANGUAGE MATCHING:
+  * English user input -> Reply in natural English.
+  * Hindi user input (Devanagari) -> Reply in Hindi using Devanagari script.
+  * Hinglish user input (mixed Hindi & English or Romanized Hindi like "AI kya hai aur iske benefits kya hain?") -> Reply in natural, conversational Hinglish (mixed Hindi and English)."""
 
 HINDI_PROMPT_DIRECTIVE = "You must reply in Hindi using the Devanagari script."
 
 
 def build_system_prompt(language: str = "auto", message: str = "") -> str:
     lang = (language or "auto").strip().lower()
-    has_devanagari = bool(re.search(r"[\u0900-\u097F]", message or ""))
-    if lang in ("hi", "hindi") or (lang == "auto" and has_devanagari):
+    msg = message or ""
+    has_devanagari = bool(re.search(r"[\u0900-\u097F]", msg))
+
+    # Detect Hinglish (Hindi words written in Latin script or mixed with English)
+    hinglish_keywords = {
+        "kya", "hai", "hain", "kaise", "kare", "karna", "nahi", "hota", "hoti",
+        "batao", "mujhe", "mera", "meri", "aap", "tum", "aur", "iska", "iske",
+        "kuch", "kyun", "kab", "kahan", "chahiye", "samjhao", "help", "fayde",
+        "nuksaan", "matlab", "shukriya", "dhanyawad", "theek", "bhi", "yeh", "woh"
+    }
+    words = set(re.findall(r"\b[a-zA-Z]+\b", msg.lower()))
+    is_hinglish = bool(words & hinglish_keywords)
+
+    if lang in ("hi", "hindi"):
         return (
             f"{SYSTEM_PROMPT}\n"
             f"- {HINDI_PROMPT_DIRECTIVE}\n"
             "- Always use proper Devanagari script for Hindi responses."
         )
+    elif has_devanagari and not is_hinglish:
+        return (
+            f"{SYSTEM_PROMPT}\n"
+            f"- {HINDI_PROMPT_DIRECTIVE}\n"
+            "- Reply in pure Hindi using Devanagari script."
+        )
+    elif is_hinglish:
+        return (
+            f"{SYSTEM_PROMPT}\n"
+            "- The user is speaking in Hinglish (Hindi + English mix). Reply in natural, conversational Hinglish mixing Hindi and English words smoothly."
+        )
+    elif lang in ("en", "english"):
+        return f"{SYSTEM_PROMPT}\n- Reply in clear, conversational English."
+
     return SYSTEM_PROMPT
 
 
