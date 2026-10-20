@@ -1,4 +1,5 @@
 import logging
+import re
 import threading
 import time
 from functools import lru_cache
@@ -63,7 +64,20 @@ def get_whisper_model() -> WhisperModel:
 def transcribe_audio(audio_path: str, language: str | None = None) -> dict:
     started = time.perf_counter()
     model = get_whisper_model()
-    kwargs = {"beam_size": 5}
+    kwargs = {
+        "beam_size": 5,
+        # Silero VAD prevents Whisper from hallucinating words such as
+        # "I", "you", or punctuation on silence/background noise.
+        "vad_filter": True,
+        "vad_parameters": {
+            "min_silence_duration_ms": 500,
+            "speech_pad_ms": 200,
+        },
+        # Voice turns are independent utterances; carrying text context
+        # into the decoder increases repetition and hallucination.
+        "condition_on_previous_text": False,
+        "no_speech_threshold": 0.6,
+    }
     if language:
         kwargs["language"] = language
     with _model_lock:
@@ -71,11 +85,29 @@ def transcribe_audio(audio_path: str, language: str | None = None) -> dict:
         segments = list(segments_iter)
 
     text = " ".join(seg.text.strip() for seg in segments).strip()
+    # Even with VAD, Whisper can occasionally return punctuation-only
+    # output. Treat that as silence instead of sending it to the LLM.
+    if not re.search(r"[A-Za-z0-9\u0900-\u097F]", text):
+        text = ""
     elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+    raw_lang = (info.language or "en").lower() if info and info.language else "en"
+    has_devanagari = bool(re.search(r"[\u0900-\u097F]", text))
+    hindi_keywords = {
+        "kya", "hai", "hain", "kaise", "kare", "karna", "nahi", "nahin", "hota", "hoti",
+        "batao", "bataiye", "mujhe", "mera", "meri", "mere", "aap", "tum", "aur", "iska", "iske",
+        "namaste", "pranam", "theek", "shukriya", "dhanyawad", "bolo"
+    }
+    has_hindi_words = bool(set(re.findall(r"\b[a-zA-Z]+\b", text.lower())) & hindi_keywords)
+
+    if raw_lang == "hi" or has_devanagari or has_hindi_words or raw_lang in ("ur", "mr", "ne", "pa", "gu", "bho", "sa"):
+        resolved_lang = "hi"
+    else:
+        resolved_lang = "en"
 
     return {
         "text": text,
-        "language": info.language,
+        "language": resolved_lang,
         "language_probability": round(float(info.language_probability), 4) if info.language_probability is not None else 1.0,
         "duration_seconds": round(float(info.duration), 2) if info.duration is not None else 0.0,
         "segments": [

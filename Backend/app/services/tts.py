@@ -42,10 +42,20 @@ MAX_TEXT_LENGTH = 3000
 
 
 def resolve_voice(voice: str, text: str | None = None) -> str:
-    """Resolve legacy frontend voice IDs to their neural equivalents."""
+    """Resolve legacy frontend voice IDs to their neural equivalents.
+
+    Priority:
+    1. If the text contains Devanagari, force a Hindi voice.
+    2. If the caller already asked for a Hindi voice, honour that.
+    3. Otherwise, resolve aliases and return as-is.
+    """
     if text and re.search(r"[\u0900-\u097F]", text):
         return "hi-IN-SwaraNeural"
-    return VOICE_ALIASES.get(voice, voice)
+    resolved = VOICE_ALIASES.get(voice, voice)
+    # Honour the caller's explicit Hindi voice even for Romanized Hindi text
+    if resolved in ALLOWED_VOICES:
+        return resolved
+    return resolved
 
 
 def get_audio_dir() -> Path:

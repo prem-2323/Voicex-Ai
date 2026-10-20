@@ -103,20 +103,31 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
 
       {/* Main Microphone Button */}
       <div className="relative flex items-center justify-center">
-        {/* Glowing ring while active */}
+        {/* Sonic Ripple Rings while listening */}
         {state === 'listening' && (
-          <div className="absolute w-24 h-24 rounded-full bg-cyan-400/20 animate-ping pointer-events-none" />
+          <>
+            <div className="absolute w-24 h-24 rounded-full border border-cyan-400/60 animate-sonic-ripple-1 pointer-events-none" />
+            <div className="absolute w-32 h-32 rounded-full border border-cyan-400/40 animate-sonic-ripple-2 pointer-events-none" />
+            <div className="absolute w-40 h-40 rounded-full border border-cyan-400/20 animate-sonic-ripple-3 pointer-events-none" />
+          </>
+        )}
+
+        {/* High-speed spin ring while processing */}
+        {(state === 'thinking' || state === 'transcribing') && (
+          <div className="absolute w-[92px] h-[92px] rounded-full p-[2px] animate-mic-spin-ring pointer-events-none">
+            <div className="w-full h-full rounded-full bg-gradient-to-tr from-cyan-400 via-violet-500 to-fuchsia-500 blur-[2px] opacity-80" />
+          </div>
         )}
 
         <button
           onClick={handleMicClick}
           disabled={state === 'transcribing' || state === 'interrupted'}
-          className={`relative z-10 w-20 h-20 rounded-full flex flex-col items-center justify-center transition-all duration-200 shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080B14] disabled:opacity-50 disabled:cursor-wait ${
+          className={`relative z-10 w-20 h-20 rounded-full flex flex-col items-center justify-center transition-all duration-300 shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080B14] disabled:opacity-50 disabled:cursor-wait group ${
             state === 'listening'
-              ? 'bg-cyan-500 text-[#080B14] hover:bg-cyan-400 shadow-[0_0_30px_rgba(34,211,238,0.5)] scale-105'
+              ? 'bg-gradient-to-b from-cyan-400 to-cyan-500 text-[#080B14] shadow-[0_0_35px_rgba(34,211,238,0.7)] scale-105 active:scale-95'
               : state === 'speaking' || state === 'thinking'
-              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-              : 'bg-violet-600 hover:bg-violet-500 text-white shadow-[0_0_25px_rgba(139,92,246,0.35)] active:scale-95'
+              ? 'bg-gradient-to-b from-amber-500/30 to-amber-600/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500/40 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+              : 'bg-gradient-to-b from-violet-600/90 to-violet-800/90 hover:from-violet-500 hover:to-violet-700 text-white shadow-[0_0_30px_rgba(139,92,246,0.4)] hover:shadow-[0_0_40px_rgba(139,92,246,0.6)] hover:scale-105 active:scale-95 border border-white/20'
           }`}
           aria-label={
             state === 'listening'
@@ -126,19 +137,22 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
               : 'Start listening (Space or M)'
           }
         >
+          {/* Top gloss specular highlight */}
+          <div className="absolute inset-x-3.5 top-1.5 h-4 rounded-full bg-gradient-to-b from-white/30 to-transparent pointer-events-none" />
+
           {state === 'listening' ? (
             <>
-              <Square className="w-7 h-7 fill-current" />
+              <Square className="w-6 h-6 fill-current transition-transform group-hover:scale-110" />
               <span className="text-[10px] font-bold tracking-wider mt-0.5 uppercase">Done</span>
             </>
           ) : state === 'speaking' || state === 'thinking' ? (
             <>
-              <Square className="w-6 h-6 fill-current" />
+              <Square className="w-5 h-5 fill-current transition-transform group-hover:scale-110" />
               <span className="text-[10px] font-medium tracking-wider mt-0.5">Stop</span>
             </>
           ) : (
             <>
-              <Mic className="w-8 h-8" />
+              <Mic className="w-7 h-7 transition-transform group-hover:scale-110" />
               <span className="text-[10px] font-semibold tracking-wider mt-0.5 uppercase">Talk</span>
             </>
           )}
@@ -146,17 +160,17 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
       </div>
 
       {/* Keyboard hotkey hint */}
-      <div className="mt-3 flex items-center gap-2 text-xs text-[#94A3B8]">
-        <kbd className="px-1.5 py-0.5 rounded-sm bg-white/5 border border-white/10 font-mono text-[10px] text-slate-300">
+      <div className="mt-3 flex items-center gap-2 text-xs text-[#94A3B8] glass-pill px-3 py-1 rounded-full border border-white/10">
+        <kbd className="px-1.5 py-0.5 rounded-sm bg-white/10 border border-white/10 font-mono text-[10px] text-slate-200">
           Space
         </kbd>
         <span>or</span>
-        <kbd className="px-1.5 py-0.5 rounded-sm bg-white/5 border border-white/10 font-mono text-[10px] text-slate-300">
+        <kbd className="px-1.5 py-0.5 rounded-sm bg-white/10 border border-white/10 font-mono text-[10px] text-slate-200">
           M
         </kbd>
         <span>to speak</span>
-        <span aria-hidden="true">·</span>
-        <kbd className="px-1.5 py-0.5 rounded-sm bg-white/5 border border-white/10 font-mono text-[10px] text-slate-300">
+        <span aria-hidden="true" className="opacity-40">·</span>
+        <kbd className="px-1.5 py-0.5 rounded-sm bg-white/10 border border-white/10 font-mono text-[10px] text-slate-200">
           Esc
         </kbd>
         <span>to cancel</span>

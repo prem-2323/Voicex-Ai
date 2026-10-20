@@ -13,7 +13,6 @@ import {
   Check,
   Globe,
   Clock,
-  Sparkles,
   AlertTriangle,
   MessageSquare,
   X,
@@ -129,7 +128,6 @@ export const ConversationHistoryView: React.FC = () => {
             onClick={createNewConversation}
             className="px-3 py-1 text-xs font-medium text-white bg-[#8B5CF6] hover:bg-[#7C3AED] rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
           >
-            <Sparkles className="w-3.5 h-3.5" />
             <span>New Session</span>
           </button>
         </div>

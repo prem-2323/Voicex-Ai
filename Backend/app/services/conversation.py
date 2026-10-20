@@ -48,17 +48,19 @@ def get_history(session_id: str) -> list[dict]:
 def get_combined_history(
     session_id: str | None, client_history: list[dict]
 ) -> list[dict]:
-    """Merge server-stored history with client-sent history.
+    """Return the history for the next LLM turn without duplicates.
 
-    Server store is the source of truth; client history seeds new
-    sessions or fills gaps. Result is trimmed to the last N messages.
+    The server store is the source of truth once a session has messages.
+    Client history is only used to seed a new/empty session (for example
+    after a backend restart). Concatenating both on every turn duplicates
+    earlier messages and quickly confuses small local models.
     """
     if not session_id:
-        return list(client_history)[-MAX_SESSION_MESSAGES:]
+        return [dict(m) for m in client_history[-MAX_SESSION_MESSAGES:]]
     with _lock:
-        stored = _sessions.get(session_id, [])
-        combined = [*stored, *client_history]
-        return [dict(m) for m in combined[-MAX_SESSION_MESSAGES:]]
+        stored = _sessions.get(session_id) or []
+        source = stored if stored else client_history
+        return [dict(m) for m in source[-MAX_SESSION_MESSAGES:]]
 
 
 def save_turn(

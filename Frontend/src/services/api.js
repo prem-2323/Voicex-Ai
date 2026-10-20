@@ -30,8 +30,8 @@ export async function transcribeAudio(audioFile) {
       audioFile.type && audioFile.type.includes("wav")
         ? "recording.wav"
         : audioFile.type && audioFile.type.includes("ogg")
-        ? "recording.ogg"
-        : "recording.webm";
+          ? "recording.ogg"
+          : "recording.webm";
     formData.append("file", audioFile, filename);
   }
 
@@ -52,10 +52,18 @@ export async function transcribeAudio(audioFile) {
   };
 }
 
-export async function sendChatMessage(message, history = [], sessionId = undefined) {
+export async function sendChatMessage(
+  message,
+  history = [],
+  sessionId = undefined,
+  language = undefined
+) {
   const payload = { message, history };
   if (sessionId) {
     payload.session_id = sessionId;
+  }
+  if (language) {
+    payload.language = language;
   }
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",

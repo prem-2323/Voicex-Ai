@@ -16,6 +16,7 @@ import {
 import { AVAILABLE_VOICES, DEFAULT_SETTINGS, INITIAL_METRICS_PREVIEW } from '../config/apiConfig';
 import { voiceClient } from '../services/voiceClient';
 import { audioManager } from '../services/audioManager';
+import { isMeaningfulUtterance } from '../utils/transcript';
 
 export type TabScreen = 'workspace' | 'history' | 'performance' | 'settings';
 
@@ -38,6 +39,7 @@ interface VoiceContextType {
   startListening: () => Promise<void>;
   stopListeningAndProcess: () => Promise<void>;
   cancelTurn: () => void;
+  interruptTurn: () => void;
   sendTextMessage: (text: string) => Promise<void>;
   uploadAndProcessAudio: (audioFile: File) => Promise<void>;
   replayAssistantMessage: (text: string) => void;
@@ -148,7 +150,6 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ...parsed,
           apiBaseUrl,
           wsUrl,
-          autoListen: true,
           selectedVoiceId: isValid ? voiceId : DEFAULT_SETTINGS.selectedVoiceId,
         };
       }
@@ -195,6 +196,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const speechRecognitionRef = useRef<unknown>(null);
   const startListeningRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const stopListeningRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const executeInferencePipelineRef = useRef<
+    (input: { audioBlob?: Blob; promptText?: string }) => Promise<void>
+  >(async () => {});
   const settingsRef = useRef(settings);
 
   useEffect(() => {
@@ -218,11 +222,56 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [conversations]);
 
-  // Audio volume analyzer loop
+  const voiceStateRef = useRef<VoiceState>(voiceState);
+
   useEffect(() => {
+    voiceStateRef.current = voiceState;
+  }, [voiceState]);
+
+  const handleBargeInInterruption = useCallback(() => {
+    console.log('[VoiceContext] User voice interruption (barge-in) triggered!');
+    audioManager.stopSpeaking();
+    voiceClient.cancelActiveResponse();
+
+    setVoiceState('interrupted');
+    setLiveStreamingText('');
+
+    // Smooth feedback snapshot, then immediately resume listening for user's follow-up speech
+    setTimeout(() => {
+      startListeningRef.current();
+    }, 180);
+  }, []);
+
+  const interruptTurn = useCallback(() => {
+    handleBargeInInterruption();
+  }, [handleBargeInInterruption]);
+
+  // Audio volume analyzer loop & real-time voice interruption detector
+  useEffect(() => {
+    let bargeInFrameCount = 0;
+    const bargeInThreshold = 0.075;
+
     const updateAudioLevel = () => {
       const vol = audioManager.getVolumeLevel();
       setMicVolume(vol);
+
+      // Active voice interruption detection while assistant is speaking or thinking
+      const currentState = voiceStateRef.current;
+      if (settingsRef.current.bargeInEnabled && (currentState === 'speaking' || currentState === 'thinking')) {
+        if (vol >= bargeInThreshold) {
+          bargeInFrameCount++;
+          // If user speaks for 2 consecutive frames (~35ms+), fire interruption!
+          if (bargeInFrameCount >= 2) {
+            bargeInFrameCount = 0;
+            handleBargeInInterruption();
+          }
+        } else {
+          bargeInFrameCount = 0;
+        }
+      } else {
+        bargeInFrameCount = 0;
+      }
+
       animFrameRef.current = requestAnimationFrame(updateAudioLevel);
     };
     animFrameRef.current = requestAnimationFrame(updateAudioLevel);
@@ -230,7 +279,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, []);
+  }, [handleBargeInInterruption]);
 
   // Barge-in setup: when assistant speaks, user voice cancels audio and starts new turn
   useEffect(() => {
@@ -238,7 +287,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audioManager.setOnBargeIn(() => {
         handleBargeInInterruption();
       });
-      audioManager.startBargeInDetector(0.35);
+      audioManager.startBargeInDetector(0.075);
     } else {
       audioManager.stopBargeInDetector();
     }
@@ -246,7 +295,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => {
       audioManager.stopBargeInDetector();
     };
-  }, [settings.bargeInEnabled]);
+  }, [settings.bargeInEnabled, handleBargeInInterruption]);
 
   // Active conversation getter
   const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0] || null;
@@ -298,18 +347,6 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     testBackendConnection();
   }, [testBackendConnection]);
 
-  const handleBargeInInterruption = () => {
-    setVoiceState('interrupted');
-    audioManager.stopSpeaking();
-    voiceClient.cancelActiveResponse();
-
-    // After brief visual snap, transition seamlessly into listening
-    setTimeout(() => {
-      setVoiceState('listening');
-      setLiveTranscript({ text: '', isFinal: false });
-      setLiveStreamingText('');
-    }, 280);
-  };
 
   const cancelTurn = useCallback(() => {
     audioManager.stopSilenceDetector();
@@ -343,7 +380,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Async sync with backend
     import('../services/api').then(({ createConversationSession }) => {
-      createConversationSession(newConv.id, newConv.title).catch(() => {});
+      createConversationSession(newConv.id, newConv.title).catch(() => { });
     });
   }, [settings.language]);
 
@@ -374,7 +411,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Async sync with backend
     import('../services/api').then(({ deleteConversationSession }) => {
-      deleteConversationSession(id).catch(() => {});
+      deleteConversationSession(id).catch(() => { });
     });
   }, []);
 
@@ -386,7 +423,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Async sync with backend
     import('../services/api').then(({ renameConversationSession }) => {
-      renameConversationSession(id, trimmed).catch(() => {});
+      renameConversationSession(id, trimmed).catch(() => { });
     });
   }, []);
 
@@ -406,7 +443,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Async sync with backend
     import('../services/api').then(({ clearAllConversationSessions }) => {
-      clearAllConversationSessions().catch(() => {});
+      clearAllConversationSessions().catch(() => { });
     });
   }, []);
 
@@ -442,9 +479,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsMicAllowed(true);
     setVoiceState('listening');
 
-    // Automatically detect when user finishes speaking and process answer hands-free
+    // Automatically detect when user finishes speaking and process answer hands-free.
+    // Give the speaker a little extra room for natural mid-sentence pauses so
+    // short fragments are not sent to the LLM as complete turns.
     audioManager.startSilenceDetector({
-      silenceTimeoutMs: 1100,
+      silenceTimeoutMs: 2000,
       speechThreshold: 0.04,
       silenceThreshold: 0.025,
       onSilenceDetected: () => {
@@ -455,7 +494,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Optional browser SpeechRecognition integration for live transcript text preview
     const SpeechRec = (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).SpeechRecognition ||
-                      (window as unknown as { webkitSpeechRecognition?: any }).webkitSpeechRecognition;
+      (window as unknown as { webkitSpeechRecognition?: any }).webkitSpeechRecognition;
 
     if (SpeechRec) {
       try {
@@ -485,8 +524,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
 
         recognition.onspeechend = () => {
-          // Native browser VAD detected end of speech!
-          audioManager.notifySpeechEndCandidate(800);
+          // Native browser VAD detected end of speech. Match the audio VAD
+          // timeout so a brief pause does not truncate the user's sentence.
+          audioManager.notifySpeechEndCandidate(2000);
         };
 
         recognition.onerror = () => {
@@ -518,15 +558,27 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Retrieve recorded audio blob from microphone
     const recordedBlob = await audioManager.stopRecording();
-    audioManager.stopMicrophone();
+    // Keep mic stream warm when bargeInEnabled is on so speech interruption is detected immediately
+    if (!settingsRef.current.bargeInEnabled && !settingsRef.current.autoListen) {
+      audioManager.stopMicrophone();
+    }
 
     const fallbackText = liveTranscript.text.trim();
     if (!recordedBlob && !fallbackText) {
+      setPermissionError('No clear speech was captured. Check your microphone and try again.');
+      setVoiceState('idle');
+      return;
+    }
+    if (!recordedBlob && !isMeaningfulUtterance(fallbackText)) {
+      setLiveTranscript({ text: '', isFinal: false });
+      setPermissionError(
+        "I couldn't clearly transcribe that. Please try speaking again or type your question.",
+      );
       setVoiceState('idle');
       return;
     }
 
-    await executeInferencePipeline({
+    await executeInferencePipelineRef.current({
       audioBlob: recordedBlob || undefined,
       promptText: fallbackText || undefined,
     });
@@ -545,20 +597,32 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setPermissionError(null);
     setVoiceState('transcribing');
     setLiveTranscript({ text: `Transcribing ${audioFile.name}...`, isFinal: false });
-    await executeInferencePipeline({ audioBlob: audioFile });
+    await executeInferencePipelineRef.current({ audioBlob: audioFile });
   }, []);
 
   // Direct text prompt submission
   const sendTextMessage = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setPermissionError(null);
+    if (!isMeaningfulUtterance(trimmed)) {
+      setPermissionError('Please enter a complete message.');
+      setVoiceState('idle');
+      return;
+    }
+    const HINDI_DETECT_REGEX = /\b(kya|hai|hain|kaise|kare|karna|nahi|nahin|hota|hoti|batao|bataiye|mujhe|mera|meri|mere|aap|tum|aur|iska|iske|iski|kuch|kyun|kab|kahan|chahiye|samjhao|fayde|nuksaan|matlab|shukriya|dhanyawad|theek|bhi|yeh|woh|namaste|pranam|kaun|kisko|kaisa|kaisi|bolo|boliye)\b/i;
+    const isHindi =
+      settings.language === 'hi' ||
+      /[\u0900-\u097F]/.test(trimmed) ||
+      HINDI_DETECT_REGEX.test(trimmed);
     setLiveTranscript({
-      text: text.trim(),
+      text: trimmed,
       isFinal: true,
-      language: /[\u0900-\u097F]/.test(text) ? 'Hindi' : 'English',
+      language: isHindi ? 'Hindi' : 'English',
     });
     setVoiceState('thinking');
-    await executeInferencePipeline({ promptText: text.trim() });
-  }, []);
+    await executeInferencePipelineRef.current({ promptText: trimmed });
+  }, [settings.language]);
 
   const executeInferencePipeline = async (input: { audioBlob?: Blob; promptText?: string }) => {
     const activeConv = conversations.find((c) => c.id === activeConvId) || conversations[0];
@@ -569,7 +633,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // If text prompt was directly provided, add user turn immediately
     if (input.promptText && !input.audioBlob) {
-      const isHindi = /[\u0900-\u097F]/.test(input.promptText) || settings.language === 'hi';
+      const HINDI_DETECT_REGEX = /\b(kya|hai|hain|kaise|kare|karna|nahi|nahin|hota|hoti|batao|bataiye|mujhe|mera|meri|mere|aap|tum|aur|iska|iske|iski|kuch|kyun|kab|kahan|chahiye|samjhao|fayde|nuksaan|matlab|shukriya|dhanyawad|theek|bhi|yeh|woh|namaste|pranam|kaun|kisko|kaisa|kaisi|bolo|boliye)\b/i;
+      const isHindi =
+        settings.language === 'hi' ||
+        /[\u0900-\u097F]/.test(input.promptText) ||
+        HINDI_DETECT_REGEX.test(input.promptText);
       const detectedLang: 'English' | 'Hindi' = isHindi ? 'Hindi' : 'English';
       const userMsg: ChatMessage = {
         id: `msg-u-${Date.now()}`,
@@ -640,6 +708,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         },
         onError: (err) => {
           setPermissionError(err);
+          setLiveTranscript({ text: '', isFinal: false });
+          setLiveStreamingText('');
           setVoiceState('idle');
         },
         onComplete: (assistantMsg) => {
@@ -696,6 +766,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
+  // Keep the latest pipeline closure available to stable event callbacks.
+  // Without this, switching conversations can leave send/upload handlers
+  // pointing at the previous conversation's history and session ID.
+  useEffect(() => {
+    executeInferencePipelineRef.current = executeInferencePipeline;
+  });
+
   return (
     <VoiceContext.Provider
       value={{
@@ -716,6 +793,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         startListening,
         stopListeningAndProcess,
         cancelTurn,
+        interruptTurn,
         sendTextMessage,
         uploadAndProcessAudio,
         replayAssistantMessage,

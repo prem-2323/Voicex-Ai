@@ -120,7 +120,7 @@ export const SettingsView: React.FC = () => {
                   Primary Interaction Language
                 </label>
                 <p className="text-[11px] text-[#94A3B8]">
-                  Select preferred interaction language or use automated dialect detection.
+                  Choose Hindi when speaking Hindi or Hinglish. Auto-detection works best with Hindi spoken in Devanagari.
                 </p>
               </div>
 

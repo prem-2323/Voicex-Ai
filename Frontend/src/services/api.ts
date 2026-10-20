@@ -21,8 +21,14 @@ export async function getModelStatus() {
   return response.json();
 }
 
-export async function transcribeAudio(audioFile: File | Blob) {
+export async function transcribeAudio(
+  audioFile: File | Blob,
+  language?: "en" | "hi" | "auto"
+) {
   const formData = new FormData();
+  if (language && language !== "auto") {
+    formData.append("language", language);
+  }
   if (audioFile instanceof File) {
     formData.append("file", audioFile);
   } else {
@@ -30,8 +36,8 @@ export async function transcribeAudio(audioFile: File | Blob) {
       audioFile.type && audioFile.type.includes("wav")
         ? "recording.wav"
         : audioFile.type && audioFile.type.includes("ogg")
-        ? "recording.ogg"
-        : "recording.webm";
+          ? "recording.ogg"
+          : "recording.webm";
     formData.append("file", audioFile, filename);
   }
 
@@ -220,5 +226,4 @@ export async function processVoice(
 
   return { transcript, answer, audio };
 }
-
 

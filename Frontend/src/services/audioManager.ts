@@ -66,6 +66,7 @@ class AudioManager {
   private pcmBuffers: Float32Array[] = [];
   private pcmSampleCount: number = 0;
   private isListening: boolean = false;
+  private isRecording: boolean = false;
   private isSpeaking: boolean = false;
   private dataArray: Uint8Array | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
@@ -129,18 +130,21 @@ class AudioManager {
     try {
       if (typeof window === 'undefined') return false;
 
+      // Auto-listen can initialize another turn while the previous stream is
+      // still warm. Release its nodes as well as its tracks before replacing it.
+      this.stopMicrophone();
+
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!this.audioContext || this.audioContext.state === 'closed') {
-        this.audioContext = new AudioCtx();
+        try {
+          this.audioContext = new AudioCtx({ sampleRate: 16000 });
+        } catch {
+          this.audioContext = new AudioCtx();
+        }
       }
 
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
-      }
-
-      // Stop existing stream if changing device
-      if (this.micStream) {
-        this.micStream.getTracks().forEach((t) => t.stop());
       }
 
       const constraints: MediaStreamConstraints = {
@@ -171,7 +175,7 @@ class AudioManager {
           this.workletNode = new AudioWorkletNode(this.audioContext, 'voicex-pcm-processor');
           const targetRate = 16000;
           this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
-            if (!this.isListening) return;
+            if (!this.isRecording) return;
             const inputData = e.data;
             if (!inputData) return;
             const currentRate = this.audioContext?.sampleRate || 48000;
@@ -223,13 +227,14 @@ class AudioManager {
 
     if (!this.micStream) return false;
 
-    if (typeof MediaRecorder !== 'undefined') {
+    this.isRecording = true;
+    if (!this.workletNode && typeof MediaRecorder !== 'undefined') {
       try {
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
           : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : '';
+            ? 'audio/webm'
+            : '';
         this.mediaRecorder = mimeType
           ? new MediaRecorder(this.micStream, { mimeType })
           : new MediaRecorder(this.micStream);
@@ -250,7 +255,8 @@ class AudioManager {
 
   public async stopRecording(): Promise<Blob | null> {
     // 1. Primary path: Pristine 16kHz mono PCM WAV (Fastest & 100% reliable with Faster-Whisper)
-    if (this.pcmSampleCount >= 3200) {
+    this.isRecording = false;
+    if (this.pcmSampleCount > 0) {
       const merged = new Float32Array(this.pcmSampleCount);
       let offset = 0;
       for (const buf of this.pcmBuffers) {
@@ -293,12 +299,20 @@ class AudioManager {
   }
 
   public stopMicrophone(): void {
+    this.isRecording = false;
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+    this.mediaRecorder = null;
+    this.recordedChunks = [];
     if (this.micStream) {
       this.micStream.getTracks().forEach((track) => track.stop());
       this.micStream = null;
     }
     if (this.workletNode) {
       try {
+        this.workletNode.port.onmessage = null;
+        this.workletNode.port.close();
         this.workletNode.disconnect();
       } catch {
         // ignore
@@ -321,6 +335,17 @@ class AudioManager {
       }
       this.sourceNode = null;
     }
+    if (this.analyser) {
+      try {
+        this.analyser.disconnect();
+      } catch {
+        // ignore
+      }
+      this.analyser = null;
+    }
+    this.dataArray = null;
+    this.pcmBuffers = [];
+    this.pcmSampleCount = 0;
     this.stopSilenceDetector();
     this.isListening = false;
   }
@@ -333,7 +358,7 @@ class AudioManager {
    * Returns current audio frequency data for visualizations (0-255).
    */
   public getFrequencyData(): Uint8Array {
-    if (this.isListening && this.analyser && this.dataArray) {
+    if (this.analyser && this.dataArray) {
       (this.analyser as any).getByteFrequencyData(this.dataArray);
       return this.dataArray;
     }
@@ -344,14 +369,14 @@ class AudioManager {
    * Returns normalized audio energy level (0.0 to 1.0)
    */
   public getVolumeLevel(): number {
-    if (!this.isListening || !this.analyser) return 0;
-    
+    if (!this.analyser || !this.micStream) return 0;
+
     // High-precision Time-Domain RMS calculation
     if (!this.timeDomainArray || this.timeDomainArray.length !== this.analyser.fftSize) {
       this.timeDomainArray = new Float32Array(this.analyser.fftSize);
     }
-    this.analyser.getFloatTimeDomainData(this.timeDomainArray);
-    
+    (this.analyser as any).getFloatTimeDomainData(this.timeDomainArray);
+
     let sumSquares = 0;
     for (let i = 0; i < this.timeDomainArray.length; i++) {
       const sample = this.timeDomainArray[i];
@@ -429,7 +454,11 @@ class AudioManager {
     }
     if (this.backendAudio) {
       try {
+        this.backendAudio.onended = null;
+        this.backendAudio.onerror = null;
         this.backendAudio.pause();
+        this.backendAudio.currentTime = 0;
+        this.backendAudio.src = '';
       } catch {
         // ignore
       }
@@ -487,6 +516,10 @@ class AudioManager {
     let voice = options.voice ? (legacyVoiceMap[options.voice] || options.voice) : '';
     if (!validVoices.has(voice)) {
       voice = hasHindi ? 'hi-IN-SwaraNeural' : 'en-US-AriaNeural';
+    } else if (hasHindi && !voice.startsWith('hi-')) {
+      // Auto-switch to Hindi voice when text contains Devanagari but
+      // the selected voice is English-only (can't pronounce Hindi).
+      voice = 'hi-IN-SwaraNeural';
     }
     const baseUrl = (options.baseUrl || '').replace(/\/$/, '');
     try {
@@ -568,25 +601,49 @@ class AudioManager {
     return this.isSpeaking;
   }
 
+  private consecutiveBargeInFrames = 0;
+
   public setOnBargeIn(callback: () => void): void {
     this.onBargeInCallback = callback;
   }
 
-  public startBargeInDetector(threshold = 0.35): void {
-    if (this.vadInterval) return;
+  public notifySpeechDetectedDuringAssistant(): void {
+    if (this.isSpeaking && this.onBargeInCallback) {
+      console.log('[AudioManager] Speech recognition triggered instant barge-in!');
+      this.stopSpeaking();
+      this.onBargeInCallback();
+    }
+  }
+
+  public startBargeInDetector(threshold = 0.075): void {
+    if (this.vadInterval) {
+      clearInterval(this.vadInterval);
+      this.vadInterval = null;
+    }
+
+    this.consecutiveBargeInFrames = 0;
 
     this.vadInterval = window.setInterval(() => {
-      if (this.isSpeaking && this.isListening) {
+      if (this.isSpeaking) {
         const vol = this.getVolumeLevel();
-        if (vol > threshold) {
-          // Barge-in detected! User spoke over the assistant
-          this.stopSpeaking();
-          if (this.onBargeInCallback) {
-            this.onBargeInCallback();
+        if (vol >= threshold) {
+          this.consecutiveBargeInFrames++;
+          // Require at least 2 consecutive checks (~130ms) to ensure it is continuous speech
+          if (this.consecutiveBargeInFrames >= 2) {
+            console.log('[AudioManager] Barge-in voice interruption detected! RMS volume:', vol);
+            this.consecutiveBargeInFrames = 0;
+            this.stopSpeaking();
+            if (this.onBargeInCallback) {
+              this.onBargeInCallback();
+            }
           }
+        } else {
+          this.consecutiveBargeInFrames = 0;
         }
+      } else {
+        this.consecutiveBargeInFrames = 0;
       }
-    }, 80);
+    }, 65);
   }
 
   public stopBargeInDetector(): void {
@@ -594,6 +651,7 @@ class AudioManager {
       clearInterval(this.vadInterval);
       this.vadInterval = null;
     }
+    this.consecutiveBargeInFrames = 0;
   }
 
   public startSilenceDetector(options: {

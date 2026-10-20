@@ -4,18 +4,26 @@
  */
 
 import React, { useState } from 'react';
-import { RefreshCw, Edit2, Check, Radio } from 'lucide-react';
-import { useVoice } from '../../context/VoiceContext';
+import {
+  Edit2,
+  Check,
+  Mic2,
+  History,
+  Plus,
+} from 'lucide-react';
+import { useVoice, TabScreen } from '../../context/VoiceContext';
+import { VoiceXLogo } from '../brand/VoiceXLogo';
 
 interface HeaderProps {
-  onOpenFastApiGuide: () => void;
+  onOpenFastApiGuide?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenFastApiGuide }) => {
+export const Header: React.FC<HeaderProps> = () => {
   const {
+    activeScreen,
+    setActiveScreen,
+    createNewConversation,
     activeConversation,
-    backendStatus,
-    testBackendConnection,
     renameConversation,
   } = useVoice();
 
@@ -36,10 +44,31 @@ export const Header: React.FC<HeaderProps> = ({ onOpenFastApiGuide }) => {
     setIsEditingTitle(false);
   };
 
+  const navItems: { id: TabScreen; label: string; icon: React.ReactNode }[] = [
+    { id: 'workspace', label: 'Workspace', icon: <Mic2 className="w-3.5 h-3.5" /> },
+    { id: 'history', label: 'History', icon: <History className="w-3.5 h-3.5" /> },
+  ];
+
   return (
-    <header className="h-14 border-b border-[#273247] bg-[#0B0F17] px-4 md:px-6 flex items-center justify-between gap-4 select-none shrink-0 z-10">
-      {/* Zone 1: Current conversation title */}
-      <div className="flex items-center gap-2.5 min-w-0">
+    <header className="h-14 border-b border-white/10 glass-panel bg-slate-950/70 px-4 md:px-6 flex items-center justify-between gap-4 select-none shrink-0 z-20">
+      {/* Zone 1: Brand & Session Title */}
+      <div className="flex items-center gap-3 min-w-0">
+        {/* Brand Icon */}
+        <div className="flex items-center gap-2">
+          <VoiceXLogo
+            size={28}
+            className="shrink-0 rounded-lg shadow-md shadow-violet-900/30"
+          />
+          <span className="font-semibold text-sm tracking-tight text-[#F1F5F9] hidden sm:inline">
+            VoiceX AI
+          </span>
+        </div>
+
+        <span className="text-[#94A3B8]/40 hidden sm:inline" aria-hidden="true">
+          |
+        </span>
+
+        {/* Current conversation title */}
         {isEditingTitle ? (
           <div className="flex items-center gap-1.5">
             <input
@@ -62,8 +91,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenFastApiGuide }) => {
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2 group min-w-0">
-            <h1 className="text-xs md:text-sm font-medium text-[#F1F5F9] truncate max-w-[200px] sm:max-w-xs md:max-w-sm">
+          <div className="flex items-center gap-1.5 group min-w-0">
+            <h1 className="text-xs md:text-sm font-medium text-[#94A3B8] group-hover:text-[#F1F5F9] truncate max-w-[140px] sm:max-w-xs transition-colors">
               {currentTitle}
             </h1>
             <button
@@ -76,50 +105,41 @@ export const Header: React.FC<HeaderProps> = ({ onOpenFastApiGuide }) => {
             </button>
           </div>
         )}
-
-        <span className="hidden lg:inline text-xs text-[#94A3B8]" aria-hidden="true">
-          ·
-        </span>
-        <span className="hidden lg:inline text-xs text-[#94A3B8] font-mono tabular-nums">
-          Faster-Whisper · Qwen-2.5-3B · Edge-TTS
-        </span>
       </div>
 
-      {/* Zone 2: Backend status & Controls */}
+      {/* Zone 2: Top Navigation Switcher (Workspace & History) */}
+      <nav className="flex items-center glass-pill rounded-lg p-0.5 border border-white/10">
+        {navItems.map((item) => {
+          const isActive = activeScreen === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveScreen(item.id)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                isActive
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'text-[#94A3B8] hover:text-[#F1F5F9] hover:bg-white/5'
+              }`}
+            >
+              {item.icon}
+              <span className="hidden md:inline">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Zone 3: New Chat Action */}
       <div className="flex items-center gap-2.5 shrink-0">
-        {/* Backend status indicator */}
-        <div className="flex items-center gap-2 text-xs">
-          {backendStatus.online ? (
-            <div className="flex items-center gap-1.5 text-[#22C55E] bg-[#22C55E]/10 border border-[#22C55E]/20 px-2 py-0.5 rounded-md text-[11px] font-medium">
-              <Radio className="w-3 h-3" />
-              <span>FastAPI Connected</span>
-              <span className="text-[#94A3B8] font-mono tabular-nums">
-                ({backendStatus.latencyTestMs}ms)
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-[#22D3EE] bg-[#22D3EE]/10 border border-[#22D3EE]/20 px-2 py-0.5 rounded-md text-[11px] font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#22D3EE]" />
-              <span>Preview Mode</span>
-            </div>
-          )}
-
-          <button
-            onClick={() => testBackendConnection()}
-            className="p-1 text-[#94A3B8] hover:text-[#F1F5F9] transition-colors rounded hover:bg-[#141C2B]"
-            title="Ping backend health endpoint"
-            aria-label="Ping backend"
-          >
-            <RefreshCw className="w-3 h-3" />
-          </button>
-        </div>
-
-        {/* Backend Setup Modal Trigger */}
         <button
-          onClick={onOpenFastApiGuide}
-          className="text-[11px] font-medium px-2.5 py-1 text-[#F1F5F9] bg-[#141C2B] hover:bg-[#192335] border border-[#273247] rounded-md transition-colors"
+          onClick={() => {
+            createNewConversation();
+            setActiveScreen('workspace');
+          }}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 text-white bg-violet-600 hover:bg-violet-500 rounded-md shadow-sm transition-all active:scale-95"
+          title="Start new voice session"
         >
-          Backend Setup
+          <Plus className="w-3.5 h-3.5" />
+          <span>New Chat</span>
         </button>
       </div>
     </header>

@@ -2,9 +2,10 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.env
+
 *.log
 models/
 generated_audio/
-voice_test.mp3
-test_tts_output.mp3
+*.wav
+*.mp3
+test_files/

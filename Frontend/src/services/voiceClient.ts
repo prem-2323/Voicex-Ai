@@ -4,6 +4,7 @@
  */
 
 import { BackendHealthStatus, ChatMessage, PerformanceMetrics } from '../types/voice';
+import { isMeaningfulUtterance } from '../utils/transcript';
 
 export interface VoiceStreamHandlers {
   onTranscript?: (transcript: string, isFinal: boolean, detectedLang: 'English' | 'Hindi') => void;
@@ -161,10 +162,20 @@ class VoiceClient {
           handlers.onTranscript?.('Transcribing audio with Faster-Whisper...', false, detectedLang);
           try {
             const { transcribeAudio } = await import('./api');
-            const sttResult = await transcribeAudio(input.audioBlob);
+            const sttResult = await transcribeAudio(input.audioBlob, input.preferredLang);
             transcriptText = (sttResult.text || '').trim();
             sttDurationMs = sttResult.processing_time_ms || 0;
-            const isHi = (sttResult.language && sttResult.language.toLowerCase().startsWith('hi')) || /[\u0900-\u097F]/.test(transcriptText);
+            const HINDI_KEYWORD_REGEX = /\b(kya|hai|hain|kaise|kare|karna|nahi|nahin|hota|hoti|batao|bataiye|mujhe|mera|meri|mere|aap|tum|aur|iska|iske|iski|kuch|kyun|kab|kahan|chahiye|samjhao|fayde|nuksaan|matlab|shukriya|dhanyawad|theek|bhi|yeh|woh|namaste|pranam|kaun|kisko|kaisa|kaisi|bolo|boliye)\b/i;
+            // Always honour Whisper's detection + script/keyword analysis
+            // regardless of the user's preferred language setting.
+            const sttDetectedHindi = sttResult.language && sttResult.language.toLowerCase().startsWith('hi');
+            const hasDevanagari = /[\u0900-\u097F]/.test(transcriptText);
+            const hasHindiKeywords = HINDI_KEYWORD_REGEX.test(transcriptText);
+            const isHi =
+              input.preferredLang === 'hi' ||
+              sttDetectedHindi ||
+              hasDevanagari ||
+              hasHindiKeywords;
             detectedLang = isHi ? 'Hindi' : 'English';
             handlers.onTranscript?.(transcriptText, true, detectedLang);
           } catch (sttErr: any) {
@@ -179,16 +190,25 @@ class VoiceClient {
           }
         }
 
-        if (!transcriptText) {
-          handlers.onError?.('No speech detected or audio was too brief.');
+        if (!transcriptText || !isMeaningfulUtterance(transcriptText)) {
+          handlers.onTranscript?.('', false, detectedLang);
+          handlers.onError?.(
+            "I couldn't clearly transcribe that. Please try speaking again or type your question.",
+          );
           this.isProcessing = false;
           return;
         }
 
-        // Phase 3: Real Local LLM via Ollama + Qwen 2.5 3B
+        // Determine strict target language: ONLY English or Hindi
+        // Use the already-resolved detectedLang from STT phase above;
+        // do NOT re-gate behind preferredLang !== 'en'.
+        const isTurnHindi = detectedLang === 'Hindi';
+
+        const finalLangParam: 'hi' | 'en' = isTurnHindi ? 'hi' : 'en';
+
+        // Phase 3: Real Local LLM via Ollama + Qwen 2.5 3B with explicit bilingual instruction
         const { sendChatMessage } = await import('./api');
-        const langParam = input.preferredLang === 'hi' ? 'hi' : input.preferredLang === 'en' ? 'en' : 'auto';
-        const chatResult = await sendChatMessage(transcriptText, input.history || [], input.sessionId, langParam);
+        const chatResult = await sendChatMessage(transcriptText, input.history || [], input.sessionId, finalLangParam);
         const answerText = chatResult.response;
         const llmDurationMs = chatResult.processing_time_ms || 0;
         const totalDurationMs = Math.round(sttDurationMs + llmDurationMs);
@@ -196,11 +216,14 @@ class VoiceClient {
         // Stream answer text
         handlers.onToken?.(answerText, answerText);
 
+        const assistantDetectedLang: 'English' | 'Hindi' =
+          /[\u0900-\u097F]/.test(answerText) || isTurnHindi ? 'Hindi' : 'English';
+
         const assistantMsg: ChatMessage = {
           id: `msg-a-${Date.now()}`,
           role: 'assistant',
           content: answerText,
-          detectedLanguage: detectedLang,
+          detectedLanguage: assistantDetectedLang,
           timestamp: Date.now(),
           latencyMetrics: {
             sttMs: Math.round(sttDurationMs),
@@ -255,6 +278,10 @@ class VoiceClient {
         this.isProcessing = false;
         return;
       } catch (err: any) {
+        if (err.name === 'AbortError' || !this.isProcessing) {
+          this.isProcessing = false;
+          return;
+        }
         handlers.onError?.(`Backend error: ${err.message || err}`);
         this.isProcessing = false;
         return;
@@ -322,6 +349,14 @@ class VoiceClient {
 
     // Determine user prompt text
     let userText = input.transcriptHint || '';
+    if (userText && !isMeaningfulUtterance(userText)) {
+      handlers.onTranscript?.('', false, input.preferredLang === 'hi' ? 'Hindi' : 'English');
+      handlers.onError?.(
+        "I couldn't clearly transcribe that. Please try speaking again or type your question.",
+      );
+      this.isProcessing = false;
+      return;
+    }
     if (!userText) {
       const defaultPhrases = [
         "Explain how VoiceX AI achieves sub-second local latency.",
@@ -332,8 +367,11 @@ class VoiceClient {
       userText = defaultPhrases[Math.floor(Math.random() * defaultPhrases.length)];
     }
 
-    // Detect language
-    const isHindi = /[\u0900-\u097F]/.test(userText) || input.preferredLang === 'hi';
+    // Detect language strictly as English or Hindi
+    const isHindi =
+      /[\u0900-\u097F]/.test(userText) ||
+      /\b(kya|hai|hain|kaise|kare|karna|nahi|nahin|hota|hoti|batao|bataiye|mujhe|mera|meri|mere|aap|tum|aur|iska|iske|iski|kuch|kyun|kab|kahan|chahiye|samjhao|fayde|nuksaan|matlab|shukriya|dhanyawad|theek|bhi|yeh|woh|namaste|pranam|kaun|kisko|kaisa|kaisi|bolo|boliye)\b/i.test(userText) ||
+      input.preferredLang === 'hi';
     const detectedLang: 'English' | 'Hindi' = isHindi ? 'Hindi' : 'English';
 
     // Simulate STT progressive transcription
@@ -343,7 +381,7 @@ class VoiceClient {
     handlers.onTranscript?.(userText, true, detectedLang);
     const sttDuration = Math.round(performance.now() - sttStart);
 
-    // Pick appropriate response
+    // Pick appropriate response strictly in the matched language
     const lower = userText.toLowerCase();
     const matched = KNOWLEDGE_RESPONSES.find((item) =>
       item.keywords.some((kw) => lower.includes(kw))
@@ -354,8 +392,8 @@ class VoiceClient {
       replyText = isHindi ? matched.hindi : matched.english;
     } else {
       replyText = isHindi
-        ? `VoiceX AI ने आपका संदेश प्राप्त कर लिया है: "${userText}"। यह स्थानीय Whisper-v3 और Kokoro मॉडल पर पूरी तरह सुरक्षित और त्वरित रूप से प्रोसेस किया गया है।`
-        : `VoiceX AI received your query: "${userText}". Processing complete using local on-device weights with zero telemetry and verified privacy.`;
+        ? `VoiceX AI ने आपका हिंदी संदेश प्राप्त कर लिया है: "${userText}"। मैं केवल हिंदी और अंग्रेजी में ही उत्तर दे सकता हूँ।`
+        : `VoiceX AI received your English message: "${userText}". I only respond in English or Hindi as configured.`;
     }
 
     // Simulate LLM TTFT (Time to first token)
@@ -435,6 +473,10 @@ class VoiceClient {
         rtf: 0.17,
       },
     };
+
+    if (!this.isProcessing) {
+      return;
+    }
 
     handlers.onComplete?.(finalMsg);
     this.isProcessing = false;

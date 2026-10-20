@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useVoice, TabScreen } from '../../context/VoiceContext';
+import { VoiceXLogo } from '../brand/VoiceXLogo';
 
 interface SidebarProps {
   isOpenMobile?: boolean;
@@ -71,9 +72,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpenMobile = false, onCloseM
         {/* Top brand & New conversation */}
         <div className="p-4 border-b border-[#273247]/60">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#8B5CF6] flex items-center justify-center shadow-xs">
-              <span className="font-bold text-white text-xs tracking-tight">VX</span>
-            </div>
+            <VoiceXLogo
+              size={28}
+              className="shrink-0 rounded-lg shadow-xs shadow-violet-900/30"
+            />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-semibold text-sm tracking-tight text-[#F1F5F9]">VoiceX AI</span>

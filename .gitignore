@@ -7,15 +7,7 @@ Frontend/dist/
 Frontend/build/
 dist/
 build/
-*.log
 
-# Env (keep examples)
-.env
-.env.local
-.env*.local
-!.env.example
-Frontend/.env
-Frontend/.env.local
 
 # OS / IDE
 .DS_Store
@@ -23,8 +15,22 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Python backend (future)
+# Python backend
 __pycache__/
-*.pyc
+*.py[cod]
 venv/
 .venv/
+
+# Environment files
+.env
+.env.local
+.env*.local
+Frontend/.env
+Frontend/.env.local
+Backend/.env
+
+# Test files and audio
+test_files/
+generated_audio/
+*.wav
+*.mp3

@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Volume2, VolumeX, RotateCcw, Square, Copy, Check, Sparkles } from 'lucide-react';
+import { Volume2, VolumeX, RotateCcw, Square, Copy, Check } from 'lucide-react';
 import { VoiceState, ChatMessage } from '../../types/voice';
 
 interface StreamingResponseProps {
@@ -53,19 +53,10 @@ export const StreamingResponse: React.FC<StreamingResponseProps> = ({
         <div className="flex items-center justify-between pb-3 border-b border-white/5 text-xs text-[#94A3B8]">
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 text-violet-400 font-medium">
-              <Sparkles className="w-3.5 h-3.5" />
               <span>VoiceX Response</span>
             </span>
             <span aria-hidden="true">·</span>
             <span>{isSpeaking ? 'Speaking' : isGenerating ? 'Streaming...' : 'Complete'}</span>
-            {metrics && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="font-mono tabular-nums text-cyan-400">
-                  TTFA {metrics.ttfaMs}ms
-                </span>
-              </>
-            )}
           </div>
 
           {/* Action buttons */}
@@ -134,19 +125,6 @@ export const StreamingResponse: React.FC<StreamingResponseProps> = ({
             </div>
           )}
         </div>
-
-        {/* Footer timing bar if available */}
-        {metrics && !isGenerating && (
-          <div className="mt-3 pt-2.5 border-t border-white/5 flex flex-wrap items-center gap-3 text-[11px] text-[#94A3B8] font-mono tabular-nums">
-            <span>STT: {metrics.sttMs}ms</span>
-            <span aria-hidden="true">·</span>
-            <span>TTFT: {metrics.ttftMs}ms</span>
-            <span aria-hidden="true">·</span>
-            <span>TTS RTF: {metrics.rtf}x</span>
-            <span aria-hidden="true">·</span>
-            <span className="text-emerald-400">Total: {metrics.totalMs}ms</span>
-          </div>
-        )}
       </div>
     </div>
   );
