@@ -22,12 +22,7 @@ venv/
 .venv/
 
 # Environment files
-.env
-.env.local
-.env*.local
-Frontend/.env
-Frontend/.env.local
-Backend/.env
+
 
 # Test files and audio
 test_files/
