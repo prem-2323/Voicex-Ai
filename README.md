@@ -111,9 +111,12 @@ cd Backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 python scripts\download_piper_models.py
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
+
+The `.env.example` files contain shareable configuration templates. Copy one to `.env` for local settings; real `.env` files are ignored by Git and should not be committed.
 
 In a second terminal, start the frontend:
 
