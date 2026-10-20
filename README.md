@@ -8,11 +8,11 @@ VoiceX AI lets you speak with an AI assistant through a web browser. It captures
 
 ## Demo
 
-Place the project demonstration video at `video/voicex-ai-demo.mp4`.
+Watch the project demonstration on [Google Drive](https://drive.google.com/file/d/1_hQBl2l0XCMOIF4n9X0e37zY9wDHm5nw/view?usp=sharing), or open the [video included in this repository](./video/VoiceX%20AI.mp4).
 
-<video src="video/voicex-ai-demo.mp4" controls width="720">
+<video src="./video/VoiceX%20AI.mp4" controls width="720">
   Your browser does not support embedded videos.
-  <a href="video/voicex-ai-demo.mp4">Open the VoiceX AI demo video</a>.
+  <a href="./video/VoiceX%20AI.mp4">Open the VoiceX AI demo video</a>.
 </video>
 
 ## What it does
@@ -71,19 +71,14 @@ The models require several gigabytes of disk space. Internet access is needed fo
 
 ## Run the project on Windows
 
-1. Install Ollama, then download the language model:
-
-   ```powershell
-   ollama pull qwen2.5:3b
-   ```
-
+1. Install [Ollama](https://ollama.com), Python 3.10 or 3.11, and Node.js 20.19+ or 22.12+.
 2. From the project folder, run:
 
    ```powershell
    .\start.bat
    ```
 
-   On the first run, the launcher installs the Python and frontend dependencies and downloads the Piper voices.
+   On the first run, the launcher creates the Python environment, installs Python and frontend dependencies, downloads the Piper voices, starts Ollama if needed, and downloads the `qwen2.5:3b` model if it is missing.
 
 3. Open the frontend at [http://localhost:3000](http://localhost:3000).
 
@@ -111,6 +106,7 @@ cd Backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+python -m pip install piper-tts onnxruntime
 Copy-Item .env.example .env
 python scripts\download_piper_models.py
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
